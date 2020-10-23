@@ -2,48 +2,8 @@ cmake_minimum_required(VERSION 3.12)
 
 project (SurfaceCutter)
 
-find_package(VTK COMPONENTS 
-  vtkCommonCore
-  vtkCommonDataModel
-  vtkCommonExecutionModel
-  vtkFiltersCore
-  vtkFiltersGeneral
-  QUIET
-  )
- 
-if (NOT VTK_FOUND)
-  message("Skipping SurfaceCutter: ${VTK_NOT_FOUND_MESSAGE}")
-  return ()
-endif()
-
-message (STATUS "VTK_VERSION: ${VTK_VERSION}")
-
-add_library (SurfaceCutter 
-  "SurfaceCutter.cxx"
-  "SurfaceCutter.h"
- "SurfaceCutterImpl.h")
-target_include_directories (SurfaceCutter 
-  PUBLIC
-  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>
-)
-
-if (VTK_VERSION VERSION_LESS "8.90.0")
-  # old system
-  include(${VTK_USE_FILE})
-  target_link_libraries(SurfaceCutter PRIVATE ${VTK_LIBRARIES})
-else ()
-  # include all components
-  target_link_libraries(SurfaceCutter PRIVATE ${VTK_LIBRARIES})
-  # vtk_module_autoinit is needed
-  vtk_module_autoinit(
-    TARGETS SurfaceCutter
-    MODULES ${VTK_LIBRARIES}
-    )
-endif () 
-
-option (BUILD_TESTING "Build tests" ON)
-
-if (BUILD_TESTING)
+option (BUILD_EXAMPLE "Build example" ON)
+if (BUILD_EXAMPLE)
   find_package(VTK COMPONENTS 
       vtkCommonCore
       vtkCommonDataModel
@@ -63,23 +23,65 @@ if (BUILD_TESTING)
       vtkRenderingOpenGL2
     QUIET
     )
+else()
+  find_package(VTK COMPONENTS 
+    vtkCommonCore
+    vtkCommonDataModel
+    vtkCommonExecutionModel
+    vtkFiltersCore
+    vtkFiltersGeneral
+    QUIET
+    )
+endif ()
+ 
+if (NOT VTK_FOUND)
+  message("Skipping ${PROJECT_NAME}: ${VTK_NOT_FOUND_MESSAGE}")
+  return ()
+endif()
 
-  add_executable (TestSurfaceCutter 
-    "TestSurfaceCutter.cpp"
+message (STATUS "VTK_VERSION: ${VTK_VERSION}")
+
+add_library (${PROJECT_NAME} 
+  "${PROJECT_NAME}.cxx"
+  "${PROJECT_NAME}.h"
+ "${PROJECT_NAME}Impl.h")
+target_include_directories (${PROJECT_NAME} 
+  PUBLIC
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>
+)
+
+if (VTK_VERSION VERSION_LESS "8.90.0")
+  # old system
+  include(${VTK_USE_FILE})
+  target_link_libraries(${PROJECT_NAME} PRIVATE ${VTK_LIBRARIES})
+else ()
+  # include all components
+  target_link_libraries(${PROJECT_NAME} PRIVATE ${VTK_LIBRARIES})
+  # vtk_module_autoinit is needed
+  vtk_module_autoinit(
+    TARGETS ${PROJECT_NAME}
+    MODULES ${VTK_LIBRARIES}
+    )
+endif () 
+
+if (BUILD_EXAMPLE)
+  add_executable (Example${PROJECT_NAME} 
+    "Example${PROJECT_NAME}.cpp"
    )
    
   if (VTK_VERSION VERSION_LESS "8.90.0")
     # old system
     include(${VTK_USE_FILE})
-    target_link_libraries(TestSurfaceCutter PRIVATE ${VTK_LIBRARIES} SurfaceCutter)
+    target_link_libraries(Example${PROJECT_NAME} PRIVATE ${VTK_LIBRARIES} ${PROJECT_NAME})
   else ()
     # include all components
-    target_link_libraries(TestSurfaceCutter PRIVATE ${VTK_LIBRARIES} SurfaceCutter)
+    target_link_libraries(Example${PROJECT_NAME} PRIVATE ${VTK_LIBRARIES} ${PROJECT_NAME})
     # vtk_module_autoinit is needed
     vtk_module_autoinit(
-      TARGETS SurfaceCutter
+      TARGETS Example${PROJECT_NAME}
       MODULES ${VTK_LIBRARIES}
       )
   endif () 
+  file (COPY "${CMAKE_CURRENT_SOURCE_DIR}/Testing" DESTINATION "${CMAKE_CURRENT_BINARY_DIR}")
 
 endif ()
