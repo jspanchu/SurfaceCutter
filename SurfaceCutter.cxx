@@ -4,6 +4,7 @@
 #include <vtkArrayDispatch.h>
 #include <vtkCellData.h>
 #include <vtkCellIterator.h>
+#include <vtkCleanPolyData.h>
 #include <vtkDataArrayAccessor.h>
 #include <vtkDataSet.h>
 #include <vtkDelaunay2D.h>
@@ -16,6 +17,10 @@
 #include <vtkTriangle.h>
 #include <vtkTriangleFilter.h>
 #include <vtkUnstructuredGrid.h>
+
+// debug
+#include <vtkXMLPolyDataWriter.h>
+// end debug includes
 
 #include <algorithm>
 #include <array>
@@ -31,7 +36,7 @@ SurfaceCutter::SurfaceCutter()
 {
   this->ComputeBoolean2D = true;
   this->InsideOut = false; // remove portion inside polygons.
-  this->TagInsertedPoints = true;
+  this->TagAcquiredPoints = true;
 
   this->SetNumberOfInputPorts(2);
   this->SetNumberOfOutputPorts(1);
@@ -119,21 +124,6 @@ namespace
     inline T diagonal() const { return std::hypot(right - left, top - bottom); }
   };
 
-  template<typename T>
-  inline static bool fullyInsideBbox(const BBox<T>& bbox1, const BBox<T>& bbox2) noexcept {
-    ///> bbox1 inside bbox2
-    if (bbox1.left < bbox2.left && bbox2.right < bbox1.right && bbox1.bottom < bbox2.bottom && bbox2.top < bbox1.top)
-    {
-      return true;
-    }
-    ///> bbox2 inside bbox1
-    if (bbox2.left < bbox1.left && bbox1.right < bbox2.right && bbox2.bottom < bbox1.bottom && bbox1.top < bbox2.top)
-    {
-      return true;
-    }
-    return false;
-  }
-
   template<typename T1, typename T2>
   inline static bool fullyOutsideBbox(const BBox<T1>& bbox1, const BBox<T2>& bbox2, bool yDownward = false) noexcept {
     if (!yDownward)
@@ -156,14 +146,6 @@ namespace
     {
       return (bbox1.left <= bbox2.right && bbox1.right >= bbox2.left && bbox1.top <= bbox2.bottom && bbox1.bottom > bbox2.top);
     }
-  }
-  
-  template<typename T>
-  inline static bool pointInBbox(const T& x, const T& y, const BBox<T>& bbox, bool yDownward = false) noexcept {
-    if (!yDownward)
-      return (bbox.left < x) && (x < bbox.right) && (bbox.bottom < y) && (y < bbox.top);
-    else
-      return (bbox.left < x) && (x < bbox.right) && (bbox.top < y) && (y < bbox.bottom);
   }
 
   /**
@@ -277,16 +259,6 @@ namespace
     SKEW
   };
 
-  /**
-    * @brief 2d intersection of line segments p1---p2, p3---p4. z-coordinate of p1 is copied over.
-    * @tparam T data type of points.
-    * @param p1 x,y,z coordinates.
-    * @param p2 x,y,z coordinates.
-    * @param p3 x,y,z coordinates.
-    * @param p4 x,y,z coordinates.
-    * @param intersectPt x,y,z coordinates.
-    * @return true: intersection, false: no intersection.
-  */
   template<typename T>
   const JunctionType intersect(const std::array<T, 3>& p1, const std::array<T, 3>& p2, const std::array<T, 3>& p3, const std::array<T, 3>& p4, std::array<T, 3>& intersectPt)
   {
@@ -404,7 +376,7 @@ namespace
     std::vector<std::array<ClipPtsType, 3>> coords;
     std::vector<std::pair<vtkIdType, vtkIdType>> edges;
     std::vector<BBox<ClipPtsType>> edgeBboxes, polyBboxes;
-    std::vector<int> invertedOp;
+    std::vector<int> insideOut;
     std::vector<std::vector<ClipPtsType>> xs, ys;
 
     inline void reserve(const vtkIdType& numCells, const vtkIdType& numPoints)
@@ -415,7 +387,7 @@ namespace
       edges.reserve(numPoints + 1);
       edgeBboxes.reserve(numPoints + 1);
       polyBboxes.reserve(numCells);
-      invertedOp.reserve(numCells);
+      insideOut.reserve(numCells);
     }
 
     inline void clear()
@@ -426,7 +398,7 @@ namespace
       edges.clear();
       edgeBboxes.clear();
       polyBboxes.clear();
-      invertedOp.clear();
+      insideOut.clear();
     }
   };
 
@@ -453,7 +425,7 @@ namespace
   };
 
   template<typename MeshPtsType, typename ScalarsType>
-  ScalarsType TriInterp(std::array<MeshPtsType, 3>& coord, const std::array<std::array<MeshPtsType, 3>, 3>& coords, const std::array<ScalarsType, 3>& scalars)
+  ScalarsType triInterpolate(std::array<MeshPtsType, 3>& coord, const std::array<std::array<MeshPtsType, 3>, 3>& coords, const std::array<ScalarsType, 3>& scalars)
   {
     std::array<double, 3> baryCoords;
     std::vector<std::array<double, 2>> triCoords2d(3);
@@ -481,7 +453,7 @@ namespace
   }
   
   template<typename MeshPtsType, typename ScalarsType>
-  void ExtractTris(vtkSmartPointer<vtkDataSet> mesh,
+  void extractTris(vtkSmartPointer<vtkDataSet> mesh,
     std::vector<std::array<vtkIdType, 3>>& tris,
     std::vector<MeshMeta<MeshPtsType, ScalarsType>>& smInfo,
     std::vector<MeshMeta<MeshPtsType, ScalarsType>>& meshInfo,
@@ -521,16 +493,16 @@ namespace
   }
 
   template<typename MeshPtsType, typename ScalarsType, typename ClipPtsType>
-  static void Discard(TriMeta<MeshPtsType, ScalarsType>& triInfo, const ClipperMeta<ClipPtsType>& clipperInfo)
+  void discard(TriMeta<MeshPtsType, ScalarsType>& triInfo, const ClipperMeta<ClipPtsType>& clipperInfo)
   {
-    ///> Remove/Accept triangles
-    /// 1. inverted is set, accept triangles inside a polygon.
-    /// 2. inverted is unset, accept triangles outside a polygon.
+    ///> Remove triangles
+    /// 1. insideOut is set, accept triangles inside a polygon.
+    /// 2. insideOut is unset, accept triangles outside a polygon.
     auto triCroid = triCentroid(triInfo.coords[0], triInfo.coords[1], triInfo.coords[2]);
     std::size_t iPoly(0);
     for (const auto& polyBbox : clipperInfo.polyBboxes)
     {
-      if (!clipperInfo.invertedOp[iPoly])
+      if (!clipperInfo.insideOut[iPoly])
       {
         if (fullyOutsideBbox(triInfo.bbox, polyBbox))
         {
@@ -541,9 +513,9 @@ namespace
 
       bool triInsidePoly = pnpoly(clipperInfo.xs[iPoly].size(), clipperInfo.xs[iPoly].data(), clipperInfo.ys[iPoly].data(), triCroid[0], triCroid[1]);
 
-      if (clipperInfo.invertedOp[iPoly] && !triInsidePoly)
+      if (clipperInfo.insideOut[iPoly] && !triInsidePoly)
         triInfo.discard = true;
-      else if (!clipperInfo.invertedOp[iPoly] && triInsidePoly)
+      else if (!clipperInfo.insideOut[iPoly] && triInsidePoly)
         triInfo.discard = true;
 
       ++iPoly;
@@ -796,11 +768,9 @@ namespace
       if (!numClipPoints)
         return;
 
-      auto invertOps = vtkAOSDataArrayTemplate<int>::FastDownCast(clipper->GetCellData()->GetArray("Invert"));
-#if 0
-      if (!invertOps)
+      auto insideOuts = vtkAOSDataArrayTemplate<int>::FastDownCast(clipper->GetCellData()->GetArray("InsideOuts"));
+      if (!insideOuts)
         return;
-#endif
 
       auto acquisition = vtkSmartPointer<vtkAOSDataArrayTemplate<int>>::New();
       acquisition->SetNumberOfComponents(1);
@@ -830,7 +800,7 @@ namespace
       MeshPtsAccess meshPtsAccess(meshPts);
       ClipPointsAccess clipPointsAccess(clipperPts);
       ScalarsAccess scalarsAccess(scalars);
-      IntArrAccess invertOpsAccess(invertOps);
+      IntArrAccess insideOutsAccess(insideOuts);
 
       CMeta clipperInfo;
       TMeta triInfo;
@@ -866,9 +836,7 @@ namespace
         clipperInfo.xs.emplace_back(_xs);
         clipperInfo.ys.emplace_back(_ys);
         clipperInfo.polyBboxes.emplace_back(BBox<ClipPointsType>(_xs, _ys));
-#if 0
-        clipperInfo.invertedOp.emplace_back(invertOpsAccess.Get(iPoly, 0));
-#endif
+        clipperInfo.insideOut.emplace_back(insideOutsAccess.Get(iPoly, 0));
       }
 
       std::vector<std::array<MeshPtsType, 3>> clipperCoords;
@@ -894,7 +862,7 @@ namespace
       trisInfo.reserve(trisInfo.size() + numCells);
       tris.reserve(tris.size() + numCells);
 
-      ExtractTris(mesh, tris, meshInfo, meshInfo, trisInfo);
+      extractTris(mesh, tris, meshInfo, meshInfo, trisInfo);
 
       meshInfo.reserve(meshInfo.size() + numClipPoints * 3 * 3); // 3 new triangles per clip point, 3 new intersection points per triangle.
       trisInfo.reserve(trisInfo.size() + numClipPoints * 3 * 3 * 3); // same as meshInfo, further 3 sub triangles per each new triangle.
@@ -940,7 +908,7 @@ namespace
           }
 
           ///> Fastest and sensible interpolation using bary centric coords.
-          ScalarsType newScalar = TriInterp<MeshPtsType, ScalarsType>(clipperCoord, triInfo.coords, triInfo.scalars);
+          ScalarsType newScalar = triInterpolate<MeshPtsType, ScalarsType>(clipperCoord, triInfo.coords, triInfo.scalars);
           auto smPt = MMeta(clipperCoord, newScalar, int(1), meshInfo.size());
           smInfo.emplace_back(smPt);
           meshInfo.emplace_back(smPt);
@@ -957,7 +925,7 @@ namespace
           del2d->SetSourceData(subMesh);
           del2d->Update();
           subMesh->ShallowCopy(del2d->GetOutput());
-          ExtractTris(subMesh, tris, smInfo, meshInfo, trisInfo);
+          extractTris(subMesh, tris, smInfo, meshInfo, trisInfo);
         }
         else
         {
@@ -1021,7 +989,7 @@ namespace
               if (pc[0] == pb_0[0] && pc[1] == pb_0[1])
                 continue;
 
-              auto newScalar = TriInterp<MeshPtsType, ScalarsType>(pc, triInfo.coords, triInfo.scalars);
+              auto newScalar = triInterpolate<MeshPtsType, ScalarsType>(pc, triInfo.coords, triInfo.scalars);
 
               triCrossesClipper |= true;
 
@@ -1053,9 +1021,7 @@ namespace
         } // end for clipper's edge
         if (!triCrossesClipper)
         {
-#if 0
-          Discard(triInfo, clipperInfo);
-#endif
+          discard(triInfo, clipperInfo);
           continue;
         }
         triInfo.discard = true;
@@ -1077,7 +1043,6 @@ namespace
         triangulate->Update();
         subMeshTris->ShallowCopy(triangulate->GetOutput());
         subMeshTris->BuildLinks();
-        
         for (const auto& constraint : constraints)
         {
           unsigned short niters = 0;
@@ -1090,22 +1055,30 @@ namespace
             {
               constraintWorker(points);
             }
-            if (niters > 128)
+            ++niters;
+            if (niters > 32)
             {
+              //auto writer = vtkSmartPointer<vtkXMLPolyDataWriter>::New();
+              //writer->SetFileName("SubMeshTri.vtp");
+              //writer->SetInputData(subMeshTris);
+              //writer->Write();
+              //writer->SetFileName("MeshTri.vtp");
+              //writer->SetInputData(mesh);
+              //writer->Write();
+              //__debugbreak();
+              //constraintWorker(points);
               break;
             }
           }
         }
         const std::size_t oldSz = trisInfo.size();
-        ExtractTris(subMeshTris, tris, smInfo, meshInfo, trisInfo);
+        extractTris(subMeshTris, tris, smInfo, meshInfo, trisInfo);
         const std::size_t newSz = trisInfo.size();
 
-#if 0
         for (std::size_t iInfo = oldSz; iInfo < newSz; ++iInfo)
         {
-          Discard(trisInfo[iInfo], clipperInfo);
+          discard(trisInfo[iInfo], clipperInfo);
         }
-#endif
       }
 
       std::vector<std::array<vtkIdType, 3>> newTris;
@@ -1123,6 +1096,10 @@ namespace
       {
         auto meshPd = vtkPolyData::SafeDownCast(mesh);
         meshPd->SetPolys(cells);
+        auto writer = vtkSmartPointer<vtkXMLPolyDataWriter>::New();
+        writer->SetFileName("SubMeshTri.vtp");
+        writer->SetInputData(meshPd);
+        writer->Write();
       }
       else if (mesh->IsA("vtkUnstructuredGrid"))
       {
@@ -1148,13 +1125,27 @@ int SurfaceCutter::RequestData(vtkInformation* request, vtkInformationVector** i
   }
 
   vtkDataArray* clipperPts = clipper->GetPoints()->GetData();
+  vtkDataArray* insideOuts;
+  if ((insideOuts = clipper->GetCellData()->GetArray("InsideOuts")) == nullptr)
+  {
+    vtkDebugMacro(<< "Clipper polygons missing InsideOuts array. Will resort to " << this->GetClassNameInternal() << "::InsideOut = " << this->InsideOut);
+    auto _insideOuts = vtkSmartPointer<vtkAOSDataArrayTemplate<int>>::New();
+    _insideOuts->SetNumberOfComponents(1);
+    _insideOuts->SetNumberOfTuples(clipper->GetNumberOfPolys());
+    _insideOuts->SetName("InsideOuts");
+    _insideOuts->FillValue(this->InsideOut);
+    clipper->GetCellData()->AddArray(_insideOuts);
+  }
 
   using dispatcher = vtkArrayDispatch::Dispatch3ByValueType<vtkArrayDispatch::Reals, vtkArrayDispatch::Reals, vtkArrayDispatch::Reals>;
   if (mesh->IsA("vtkPolyData"))
   {
     vtkSmartPointer<vtkPolyData> meshPd = vtkPolyData::SafeDownCast(mesh);
     vtkDataArray* points = meshPd->GetPoints()->GetData();
-    vtkDataArray* scalars = this->GetInputArrayToProcess(0, meshPd);
+    vtkDataArray* scalars;
+    if ((scalars = this->GetInputArrayToProcess(0, meshPd)) == nullptr)
+      vtkErrorMacro(<< "Input surface is missing scalars.");
+
     auto worker = SurfCutterImpl(meshPd, clipper, this->InsideOut, scalars->GetName());
     if (!dispatcher::Execute(points, scalars, clipperPts, worker))
     {

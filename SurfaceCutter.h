@@ -13,9 +13,9 @@ public:
   vtkSetMacro(ComputeBoolean2D, bool);
   vtkGetMacro(ComputeBoolean2D, bool);
 
-  vtkBooleanMacro(TagInsertedPoints, bool);
-  vtkSetMacro(TagInsertedPoints, bool);
-  vtkGetMacro(TagInsertedPoints, bool);
+  vtkBooleanMacro(TagAcquiredPoints, bool);
+  vtkSetMacro(TagAcquiredPoints, bool);
+  vtkGetMacro(TagAcquiredPoints, bool);
   
   vtkBooleanMacro(InsideOut, bool);
   vtkSetMacro(InsideOut, bool);
@@ -28,9 +28,8 @@ protected:
   ~SurfaceCutter();
 
   bool ComputeBoolean2D;
-  bool TagInsertedPoints;
+  bool TagAcquiredPoints;
   bool InsideOut;
-
 
   int FillInputPortInformation(int port, vtkInformation* info) override;
   int RequestData(vtkInformation* request, vtkInformationVector** inputVector, vtkInformationVector* outputVector) override;
