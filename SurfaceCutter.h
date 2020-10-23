@@ -21,6 +21,8 @@ public:
   vtkSetMacro(InsideOut, bool);
   vtkGetMacro(InsideOut, bool);
 
+  void SetLoops(vtkDataSet* loops);
+
 protected:
   SurfaceCutter();
   ~SurfaceCutter();
@@ -29,7 +31,9 @@ protected:
   bool TagInsertedPoints;
   bool InsideOut;
 
-  int RequestData(vtkInformation* request, vtkInformationVector** inInfo, vtkInformationVector* ouInfo) override;
+
+  int FillInputPortInformation(int port, vtkInformation* info);
+  int RequestData(vtkInformation* request, vtkInformationVector** inputVector, vtkInformationVector* outputVector) override;
 
 private:
   SurfaceCutter(const SurfaceCutter&) = delete;
