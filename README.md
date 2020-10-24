@@ -63,7 +63,7 @@ $ benchmark -m data/Surface.vtu -l data/TestPolys2.vtp --vtkclipdataset
 *janky around corners* *not goood*
 ![vtkClipDataSet result](illustrations/vtkClipDataSet.png)
 
-## vtkCookieCutter result
+## vtkCookieCutter
 [vtkCookieCutter](https://vtk.org/doc/nightly/html/classvtkCookieCutter.html)
 This filter doesn't yet support insideOut functionality. Check out [this MR](https://gitlab.kitware.com/vtk/vtk/-/merge_requests/5731)
 ```
