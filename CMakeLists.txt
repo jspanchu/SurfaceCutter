@@ -70,20 +70,20 @@ endif ()
 file (COPY "${CMAKE_CURRENT_SOURCE_DIR}/data" DESTINATION "${CMAKE_CURRENT_BINARY_DIR}")
 
 if (BUILD_EXAMPLE)
-  add_executable (${PROJECT_NAME}_demo 
+  add_executable (benchmark 
     "${PROJECT_NAME}Benchmark.cpp"
    )
    
   if (VTK_VERSION VERSION_LESS "8.90.0")
     # old system
     include(${VTK_USE_FILE})
-    target_link_libraries(${PROJECT_NAME}_demo PRIVATE ${VTK_LIBRARIES} ${PROJECT_NAME})
+    target_link_libraries(benchmark PRIVATE ${VTK_LIBRARIES} ${PROJECT_NAME})
   else ()
     # include all components
-    target_link_libraries(${PROJECT_NAME}_demo PRIVATE ${VTK_LIBRARIES} ${PROJECT_NAME})
+    target_link_libraries(benchmark PRIVATE ${VTK_LIBRARIES} ${PROJECT_NAME})
     # vtk_module_autoinit is needed
     vtk_module_autoinit(
-      TARGETS ${PROJECT_NAME}_demo
+      TARGETS benchmark
       MODULES ${VTK_LIBRARIES}
       )
   endif ()

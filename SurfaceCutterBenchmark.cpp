@@ -34,7 +34,7 @@ static void ShowUsage(const char* appname)
 {
   std::cerr << "Usage: " << appname << " <option(s)>"
     << "Options:\n"
-    << "\t-h,--help\t\tShow this help message\n"
+    << "\t-h,--help\tShow this help message\n"
     << "\t-m,--mesh \tSpecify mesh file (*.vtp, *.vtu)\n"
     << "\t-l,--loops \tSpecify loops file (*.vtp)\n"
     << "\t-i,--invert \tInvert 2d boolean. Portions inside loops will be removed.\n"
