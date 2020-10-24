@@ -82,8 +82,7 @@ Mem: 8G DDR4
 
 The benchmark itself is a simple C++ program written using VTK library.
 ```
- .\benchmark.exe -h
-Usage: -h <option(s)>Options:
+./benchmark.exe <option(s)>Options:
         -h,--help       Show this help message
         -m,--mesh       Specify mesh file (*.vtp, *.vtu)
         -l,--loops      Specify loops file (*.vtp)
