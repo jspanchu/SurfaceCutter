@@ -4,6 +4,7 @@
 #include <vtkCylinderSource.h>
 #include <vtkDataSetMapper.h>
 #include <vtkInteractorStyleTrackballCamera.h>
+#include <vtkInteractorStyleImage.h>
 #include <vtkNamedColors.h>
 #include <vtkProperty.h>
 #include <vtkRenderer.h>
@@ -55,7 +56,7 @@ int main(int, char* []) {
 
   //auto mesh = vtkSmartPointer<vtkPolyData>::New();
   auto meshReader = vtkSmartPointer<vtkXMLPolyDataReader>::New();
-  meshReader->SetFileName("Testing/Triangle.vtp");
+  meshReader->SetFileName("Testing/Manifold.vtp");
 
   auto meshTransformFilter = vtkSmartPointer<vtkTransformFilter>::New();
   meshTransformFilter->SetTransform(meshTransform);
@@ -63,11 +64,12 @@ int main(int, char* []) {
   meshTransformFilter->SetInputConnection(meshReader->GetOutputPort());
 
   auto polysReader = vtkSmartPointer<vtkXMLPolyDataReader>::New();
-  polysReader->SetFileName("Testing/Case5.vtp");
+  polysReader->SetFileName("Testing/TestVessel.vtp");
   
   auto surfCutter = vtkSmartPointer<SurfaceCutter>::New();
   surfCutter->SetInputConnection(0, meshTransformFilter->GetOutputPort());
   surfCutter->SetInputConnection(1, polysReader->GetOutputPort());
+  surfCutter->SetComputeBoolean2D(true);
 
   auto meshMapper = vtkSmartPointer<vtkDataSetMapper>::New();
   meshMapper->SetInputConnection(surfCutter->GetOutputPort());
@@ -92,6 +94,9 @@ int main(int, char* []) {
   renderer->AddActor(meshActor);
   renderer->AddActor(polysActor);
   renderer->SetBackground(colors->GetColor3d("BkgColor").GetData());
+  renderer->GetActiveCamera()->SetParallelProjection(true);
+  renderer->ResetCameraClippingRange();
+  renderer->ResetCamera();
 
   renderWindow->SetSize(640, 480);
   renderWindow->AddRenderer(renderer);
@@ -101,7 +106,7 @@ int main(int, char* []) {
   renderWindowInteractor->SetRenderWindow(renderWindow);
 
   renderWindow->Render();
-  auto istyle = vtkSmartPointer<vtkInteractorStyleTrackballCamera>::New();
+  auto istyle = vtkSmartPointer<vtkInteractorStyleImage>::New();
   renderWindowInteractor->SetInteractorStyle(istyle);
   renderWindowInteractor->Initialize();
   renderWindowInteractor->CreateRepeatingTimer(1);
