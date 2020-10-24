@@ -1,0 +1,300 @@
+<!DOCTYPE html>
+<html>
+	<head>
+		<title>chart created with amCharts | amCharts</title>
+		<meta name="description" content="chart created using amCharts live editor" />
+		
+		<!-- amCharts javascript sources -->
+		<script type="text/javascript" src="https://www.amcharts.com/lib/3/amcharts.js"></script>
+		<script type="text/javascript" src="https://www.amcharts.com/lib/3/serial.js"></script>
+		
+
+		<!-- amCharts javascript code -->
+		<script type="text/javascript">
+			AmCharts.makeChart("chartdiv",
+				{
+					"type": "serial",
+					"categoryField": "category",
+					"startDuration": 1,
+					"theme": "default",
+					"categoryAxis": {
+						"autoRotateAngle": -18,
+						"classNameField": "Attempt idx",
+						"gridPosition": "start",
+						"minPeriod": "mm",
+						"firstDayOfWeek": 0,
+						"labelOffset": -1,
+						"labelsEnabled": false,
+						"title": "Attempts"
+					},
+					"trendLines": [],
+					"graphs": [
+						{
+							"balloonColor": "undefined",
+							"customMarker": "",
+							"fillAlphas": 0.06,
+							"id": "AmGraph-5",
+							"labelOffset": -2,
+							"lineColor": "#32A9FF",
+							"lineThickness": 2,
+							"periodSpan": 0,
+							"tabIndex": 1,
+							"title": "vtkClipDataSet",
+							"topRadius": 0,
+							"type": "smoothedLine",
+							"valueField": "vtkClipDataSet"
+						},
+						{
+							"fillAlphas": 0.05,
+							"id": "AmGraph-8",
+							"lineColor": "#2D8B01",
+							"lineThickness": 2,
+							"title": "SurfaceCutter",
+							"type": "smoothedLine",
+							"valueField": "SurfaceCutter"
+						},
+						{
+							"fillAlphas": 0.05,
+							"id": "AmGraph-9",
+							"lineColor": "#CC0000",
+							"lineThickness": 2,
+							"title": "vtkCookieCutter",
+							"type": "smoothedLine",
+							"valueField": "vtkCookieCutter"
+						}
+					],
+					"guides": [],
+					"valueAxes": [
+						{
+							"axisTitleOffset": 6,
+							"id": "ValueAxis-3",
+							"autoRotateAngle": -36,
+							"autoRotateCount": 0,
+							"minVerticalGap": 37,
+							"title": "Recompute time (ms)"
+						}
+					],
+					"allLabels": [],
+					"balloon": {},
+					"legend": {
+						"enabled": true,
+						"labelWidth": 4,
+						"useGraphSettings": true
+					},
+					"titles": [
+						{
+							"id": "Title-1",
+							"size": 15,
+							"text": "VTK 2D Surface cut benchmarks"
+						}
+					],
+					"dataProvider": [
+						{
+							"vtkCookieCutter": "1280",
+							"vtkClipDataSet": "550",
+							"SurfaceCutter": "650"
+						},
+						{
+							"vtkCookieCutter": "1227",
+							"vtkClipDataSet": "173",
+							"SurfaceCutter": "146"
+						},
+						{
+							"vtkCookieCutter": "1202",
+							"vtkClipDataSet": "169",
+							"SurfaceCutter": "146"
+						},
+						{
+							"vtkCookieCutter": "1144",
+							"vtkClipDataSet": "172",
+							"SurfaceCutter": "145"
+						},
+						{
+							"vtkCookieCutter": "1241",
+							"vtkClipDataSet": "170",
+							"SurfaceCutter": "151"
+						},
+						{
+							"vtkCookieCutter": "1234",
+							"vtkClipDataSet": "167",
+							"SurfaceCutter": "148"
+						},
+						{
+							"vtkCookieCutter": "1260",
+							"vtkClipDataSet": "179",
+							"SurfaceCutter": "143"
+						},
+						{
+							"vtkCookieCutter": "1145",
+							"vtkClipDataSet": "178",
+							"SurfaceCutter": "140"
+						},
+						{
+							"vtkCookieCutter": "1201",
+							"vtkClipDataSet": "176",
+							"SurfaceCutter": "140"
+						},
+						{
+							"vtkCookieCutter": "1310",
+							"vtkClipDataSet": "169",
+							"SurfaceCutter": "143"
+						},
+						{
+							"vtkCookieCutter": "1100",
+							"vtkClipDataSet": "174",
+							"SurfaceCutter": "142"
+						},
+						{
+							"vtkCookieCutter": "1216",
+							"vtkClipDataSet": "169",
+							"SurfaceCutter": "133"
+						},
+						{
+							"vtkCookieCutter": "1239",
+							"vtkClipDataSet": "169",
+							"SurfaceCutter": "135"
+						},
+						{
+							"vtkCookieCutter": "1294",
+							"vtkClipDataSet": "168",
+							"SurfaceCutter": "136"
+						},
+						{
+							"vtkCookieCutter": "1201",
+							"vtkClipDataSet": "175",
+							"SurfaceCutter": "133"
+						},
+						{
+							"vtkCookieCutter": "1257",
+							"vtkClipDataSet": "173",
+							"SurfaceCutter": "132"
+						},
+						{
+							"vtkCookieCutter": "1240",
+							"vtkClipDataSet": "177",
+							"SurfaceCutter": "122"
+						},
+						{
+							"vtkCookieCutter": "1187",
+							"vtkClipDataSet": "177",
+							"SurfaceCutter": "125"
+						},
+						{
+							"vtkCookieCutter": "1234",
+							"vtkClipDataSet": "173",
+							"SurfaceCutter": "126"
+						},
+						{
+							"vtkCookieCutter": "1228",
+							"vtkClipDataSet": "175",
+							"SurfaceCutter": "123"
+						},
+						{
+							"vtkCookieCutter": "1279",
+							"vtkClipDataSet": "175",
+							"SurfaceCutter": "126"
+						},
+						{
+							"vtkCookieCutter": "1299",
+							"vtkClipDataSet": "181",
+							"SurfaceCutter": "123"
+						},
+						{
+							"vtkCookieCutter": "1282",
+							"vtkClipDataSet": "179",
+							"SurfaceCutter": "117"
+						},
+						{
+							"vtkCookieCutter": "1325",
+							"vtkClipDataSet": "174",
+							"SurfaceCutter": "123"
+						},
+						{
+							"vtkCookieCutter": "1271",
+							"vtkClipDataSet": "174",
+							"SurfaceCutter": "112"
+						},
+						{
+							"vtkCookieCutter": "1328",
+							"vtkClipDataSet": "180",
+							"SurfaceCutter": "114"
+						},
+						{
+							"vtkCookieCutter": "1241",
+							"vtkClipDataSet": "178",
+							"SurfaceCutter": "110"
+						},
+						{
+							"vtkCookieCutter": "1283",
+							"vtkClipDataSet": "175",
+							"SurfaceCutter": "100"
+						},
+						{
+							"vtkCookieCutter": "1269",
+							"vtkClipDataSet": "179",
+							"SurfaceCutter": "101"
+						},
+						{
+							"vtkCookieCutter": "1194",
+							"vtkClipDataSet": "182",
+							"SurfaceCutter": "101"
+						},
+						{
+							"vtkCookieCutter": "1167",
+							"vtkClipDataSet": "178",
+							"SurfaceCutter": "89"
+						},
+						{
+							"vtkCookieCutter": "1268",
+							"vtkClipDataSet": "186",
+							"SurfaceCutter": "88"
+						},
+						{
+							"vtkCookieCutter": "1162",
+							"vtkClipDataSet": "199",
+							"SurfaceCutter": "85"
+						},
+						{
+							"vtkCookieCutter": "1243",
+							"vtkClipDataSet": "177",
+							"SurfaceCutter": "81"
+						},
+						{
+							"vtkCookieCutter": "1230",
+							"vtkClipDataSet": "171",
+							"SurfaceCutter": "78"
+						},
+						{
+							"vtkCookieCutter": "1228",
+							"vtkClipDataSet": "180",
+							"SurfaceCutter": "82"
+						},
+						{
+							"vtkCookieCutter": "1290",
+							"vtkClipDataSet": "187",
+							"SurfaceCutter": "84"
+						},
+						{
+							"vtkCookieCutter": "1250",
+							"vtkClipDataSet": "187",
+							"SurfaceCutter": "83"
+						},
+						{
+							"vtkCookieCutter": "1220",
+							"vtkClipDataSet": "181",
+							"SurfaceCutter": "81"
+						},
+						{
+							"vtkCookieCutter": "1253",
+							"vtkClipDataSet": "176",
+							"SurfaceCutter": "84"
+						}
+					]
+				}
+			);
+		</script>
+	</head>
+	<body>
+		<div id="chartdiv" style="width: 100%; height: 400px; background-color: #FFFFFF;" ></div>
+	</body>
+</html>

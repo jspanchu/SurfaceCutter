@@ -22,6 +22,24 @@
           "type": "BOOL"
         }
       ]
+    },
+    {
+      "name": "x64-Release",
+      "generator": "Ninja",
+      "configurationType": "Release",
+      "buildRoot": "${projectDir}\\out\\build\\${name}",
+      "installRoot": "${projectDir}\\out\\install\\${name}",
+      "cmakeCommandArgs": "",
+      "buildCommandArgs": "",
+      "ctestCommandArgs": "",
+      "inheritEnvironments": [ "msvc_x64_x64" ],
+      "variables": [
+        {
+          "name": "VTK_DIR",
+          "value": "C:/Users/jaswa/source/repos/vtk/out/install/x64-Release/lib/cmake",
+          "type": "PATH"
+        }
+      ]
     }
   ]
 }
