@@ -38,9 +38,9 @@ public:
     unsigned long vtkNotUsed(eventId),
     void* callData)
   {
-    //rotation += 0.1;
-    //std::cout << rotation << std::endl;
-    //meshTransform->RotateZ(0.1);
+    rotation += 0.1;
+    std::cout << rotation << std::endl;
+    meshTransform->RotateZ(0.1);
     renderWindow->Render();
   }
 };
@@ -59,7 +59,7 @@ int main(int, char* []) {
 
   auto meshTransformFilter = vtkSmartPointer<vtkTransformFilter>::New();
   meshTransformFilter->SetTransform(meshTransform);
-  meshTransform->RotateZ(233.5);
+  //meshTransform->RotateZ(233.5);
   meshTransformFilter->SetInputConnection(meshReader->GetOutputPort());
 
   auto polysReader = vtkSmartPointer<vtkXMLPolyDataReader>::New();

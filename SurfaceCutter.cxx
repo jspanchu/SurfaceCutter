@@ -8,6 +8,7 @@
 #include <vtkDataArrayAccessor.h>
 #include <vtkDataSet.h>
 #include <vtkDelaunay2D.h>
+#include <vtkExtractEdges.h>
 #include <vtkInformation.h>
 #include <vtkInformationVector.h>
 #include <vtkObjectFactory.h>
@@ -17,6 +18,7 @@
 #include <vtkTriangle.h>
 #include <vtkTriangleFilter.h>
 #include <vtkUnstructuredGrid.h>
+#include <vtkAbstractCellLocator.h>
 
 // debug
 #include <vtkXMLPolyDataWriter.h>
@@ -71,6 +73,7 @@ void SurfaceCutter::SetLoops(vtkDataSet* loops)
   this->SetInputData(1, loops);
 }
 
+#if 1
 // anon begin
 namespace
 { 
@@ -306,6 +309,28 @@ namespace
     T x3 = p3[0], y3 = p3[1];
     T x4 = p4[0], y4 = p4[1];
     constexpr T eps = std::numeric_limits<T>::epsilon();
+
+    // ends are joint.
+    if (std::abs(x2 - x4) < eps && std::abs(y2 - y4) < eps)
+    {
+      intersectPt = p2;
+      return JunctionType::INTERSECT;
+    }
+    else if (std::abs(x1 - x3) < eps && std::abs(y1 - y3) < eps)
+    {
+      intersectPt = p1;
+      return JunctionType::INTERSECT;
+    }
+    else if (std::abs(x1 - x4) < eps && std::abs(y1 - y4) < eps)
+    {
+      intersectPt = p1;
+      return JunctionType::INTERSECT;
+    }
+    else if (std::abs(x2 - x3) < eps && std::abs(y2 - y3) < eps)
+    {
+      intersectPt = p2;
+      return JunctionType::INTERSECT;
+    }
 
     T denom = (x2 - x1) * (y4 - y3) - (x4 - x3) * (y2 - y1);
 
@@ -1058,14 +1083,14 @@ namespace
             ++niters;
             if (niters > 32)
             {
-              //auto writer = vtkSmartPointer<vtkXMLPolyDataWriter>::New();
-              //writer->SetFileName("SubMeshTri.vtp");
-              //writer->SetInputData(subMeshTris);
-              //writer->Write();
-              //writer->SetFileName("MeshTri.vtp");
-              //writer->SetInputData(mesh);
-              //writer->Write();
-              //__debugbreak();
+              auto writer = vtkSmartPointer<vtkXMLPolyDataWriter>::New();
+              writer->SetFileName("SubMeshTri.vtp");
+              writer->SetInputData(subMeshTris);
+              writer->Write();
+              writer->SetFileName("meshtri.vtp");
+              writer->SetInputData(mesh);
+              writer->Write();
+              __debugbreak();
               //constraintWorker(points);
               break;
             }
@@ -1110,33 +1135,125 @@ namespace
   };
 }
 // anon end
+#endif
+
+#if 0
+namespace {
+
+  template<typename PointsType, typename ScalarsType>
+  ScalarsType triInterpolate(std::array<PointsType, 3>& coord, const std::array<std::array<PointsType, 3>, 3>& coords, const std::array<ScalarsType, 3>& scalars)
+  {
+    std::array<double, 3> baryCoords;
+    std::vector<std::array<double, 2>> triCoords2d(3);
+    std::array<double, 2> interpAt = { coord[0], coord[1] };
+    for (std::size_t triVert = 0; triVert < 3; ++triVert) // get 2d only.
+    {
+      for (std::size_t iDim = 0; iDim < 2; ++iDim)
+        triCoords2d[triVert][iDim] = coords[triVert][iDim];
+    }
+
+    vtkTriangle::BarycentricCoords(interpAt.data(), triCoords2d[0].data(), triCoords2d[1].data(), triCoords2d[2].data(), baryCoords.data());
+
+    ScalarsType interpScalar = 0;
+    ScalarsType barySum = 0;
+    for (std::size_t triVert = 0; triVert < 3; ++triVert)
+    {
+      interpScalar += baryCoords[triVert] * scalars[triVert];
+    }
+    coord[2] = PointsType(0);
+    for (std::size_t triVert = 0; triVert < 3; ++triVert)
+    {
+      coord[2] += baryCoords[triVert] * coords[triVert][2];
+    }
+    return interpScalar;
+  }
+
+  struct AcquirePointsImpl {
+
+    AcquirePointsImpl(vtkSmartPointer<vtkCellArray> cells, const bool& doTag)
+      : meshPolys(cells), tagAcquired(doTag)
+    {}
+
+    vtkSmartPointer<vtkCellArray> meshPolys;
+    bool tagAcquired;
+
+    template<typename PointsArrayType1, typename ScalarsArrayType, typename PointsArrayType2>
+    void operator()(PointsArrayType1* meshPoints, ScalarsArrayType* scalars, PointsArrayType2* cutterPoints)
+    {
+      const vtkIdType& nMeshPoints = meshPoints->GetNumberOfTuples();
+      const vtkIdType& nScalars = scalars->GetNumberOfTuples();
+      const vtkIdType& nCutterPoints = cutterPoints->GetNumberOfTuples();
+
+      if (!(nMeshPoints && nScalars && nCutterPoints))
+        return;
+
+      if (nMeshPoints != nScalars)
+        return;
+
+      using PointsAccess1 = vtkDataArrayAccessor<PointsArrayType1>;
+      using ScalarsAccess = vtkDataArrayAccessor<PointsArrayType1>;
+      using PointsAccess2 = vtkDataArrayAccessor<PointsArrayType2>;
+
+      using PointsType1 = PointsAccess1::APIType;
+      using ScalarsType = ScalarsAccess::APIType;
+      using PointsType2 = PointsAccess2::APIType;
+
+      std::array<double, 2> meshZBnds, cutterZBnds;
+      meshPoints->GetRange(meshZBnds.data(), 2);
+      cutterPoints->GetRange(cutterZBnds.data(), 2);
+
+      PointsType1
+    }
+
+    template<typename PointsArrayType1, typename PointsArrayType2>
+    void operator()(PointsArrayType1* meshPoints, PointsArrayType2* cutterPoints)
+    {
+
+    }
+  };
+}
+#endif
 
 int SurfaceCutter::RequestData(vtkInformation* request, vtkInformationVector** inputVector, vtkInformationVector* outputVector)
 {
   vtkSmartPointer<vtkDataSet> mesh = vtkDataSet::GetData(inputVector[0]->GetInformationObject(0));
-  vtkSmartPointer<vtkPolyData> clipper = vtkPolyData::GetData(inputVector[1]->GetInformationObject(0));
+  vtkSmartPointer<vtkPolyData> loops = vtkPolyData::GetData(inputVector[1]->GetInformationObject(0));
   vtkSmartPointer<vtkDataSet> outMesh = vtkDataSet::GetData(outputVector->GetInformationObject(0));
 
-
-  if (!clipper->GetNumberOfPoints())
+  if (!loops->GetNumberOfPoints())
   {
     outMesh->ShallowCopy(mesh);
     return 1;
   }
 
-  vtkDataArray* clipperPts = clipper->GetPoints()->GetData();
   vtkDataArray* insideOuts;
-  if ((insideOuts = clipper->GetCellData()->GetArray("InsideOuts")) == nullptr)
+  if ((insideOuts = loops->GetCellData()->GetArray("InsideOuts")) == nullptr)
   {
     vtkDebugMacro(<< "Clipper polygons missing InsideOuts array. Will resort to " << this->GetClassNameInternal() << "::InsideOut = " << this->InsideOut);
     auto _insideOuts = vtkSmartPointer<vtkAOSDataArrayTemplate<int>>::New();
     _insideOuts->SetNumberOfComponents(1);
-    _insideOuts->SetNumberOfTuples(clipper->GetNumberOfPolys());
+    _insideOuts->SetNumberOfTuples(loops->GetNumberOfPolys());
     _insideOuts->SetName("InsideOuts");
     _insideOuts->FillValue(this->InsideOut);
-    clipper->GetCellData()->AddArray(_insideOuts);
+    loops->GetCellData()->AddArray(_insideOuts);
   }
 
+#if 0
+  auto edges = vtkSmartPointer<vtkPolyData>::New();
+  auto edgesOnly = vtkSmartPointer<vtkExtractEdges>::New();
+  edgesOnly->SetInputData(loops);
+  edgesOnly->Update();
+  edges->ShallowCopy(edgesOnly->GetOutput());
+
+  this->AcquirePoints(mesh, loops);
+  this->AcquireEdges(mesh, edges->GetPoints(), edges->GetLines());
+
+  if (this->ComputeBoolean2D)
+    this->ApplyBoolean(mesh, loops);
+#endif
+
+#if 1
+  vtkDataArray* loopsPts = loops->GetPoints()->GetData();
   using dispatcher = vtkArrayDispatch::Dispatch3ByValueType<vtkArrayDispatch::Reals, vtkArrayDispatch::Reals, vtkArrayDispatch::Reals>;
   if (mesh->IsA("vtkPolyData"))
   {
@@ -1146,10 +1263,10 @@ int SurfaceCutter::RequestData(vtkInformation* request, vtkInformationVector** i
     if ((scalars = this->GetInputArrayToProcess(0, meshPd)) == nullptr)
       vtkErrorMacro(<< "Input surface is missing scalars.");
 
-    auto worker = SurfCutterImpl(meshPd, clipper, this->InsideOut, scalars->GetName());
-    if (!dispatcher::Execute(points, scalars, clipperPts, worker))
+    auto worker = SurfCutterImpl(meshPd, loops, this->InsideOut, scalars->GetName());
+    if (!dispatcher::Execute(points, scalars, loopsPts, worker))
     {
-      worker(points, scalars, clipperPts);
+      worker(points, scalars, loopsPts);
     }
     vtkSmartPointer<vtkPolyData> outMeshPd = vtkPolyData::SafeDownCast(outMesh);
     outMeshPd->ShallowCopy(meshPd);
@@ -1159,15 +1276,46 @@ int SurfaceCutter::RequestData(vtkInformation* request, vtkInformationVector** i
     vtkSmartPointer<vtkUnstructuredGrid> meshUgrid = vtkUnstructuredGrid::SafeDownCast(mesh);
     vtkDataArray* points = meshUgrid->GetPoints()->GetData();
     vtkDataArray* scalars = this->GetInputArrayToProcess(0, meshUgrid);
-    auto worker = SurfCutterImpl(meshUgrid, clipper, this->InsideOut, scalars->GetName());
-    if (!dispatcher::Execute(points, scalars, clipperPts, worker))
+    auto worker = SurfCutterImpl(meshUgrid, loops, this->InsideOut, scalars->GetName());
+    if (!dispatcher::Execute(points, scalars, loopsPts, worker))
     {
-      worker(points, scalars, clipperPts);
+      worker(points, scalars, loopsPts);
     }
     vtkSmartPointer<vtkUnstructuredGrid> outMeshUgrid = vtkUnstructuredGrid::SafeDownCast(outMesh);
     outMeshUgrid->ShallowCopy(meshUgrid);
   }
+#endif
 
   outMesh->ShallowCopy(mesh);
   return 1;
+}
+
+void SurfaceCutter::AcquirePoints(vtkDataSet* mesh, vtkPolyData* loops)
+{
+  if (mesh->IsA("vtkPolyData"))
+  {
+    vtkPolyData* meshPd;
+    if ((meshPd = vtkPolyData::SafeDownCast(mesh)) != nullptr)
+    {
+
+    }
+  }
+  else if (mesh->IsA("vtkUnstructuredGrid"))
+  {
+    vtkUnstructuredGrid* meshUgrid;
+    if ((meshUgrid = vtkUnstructuredGrid::SafeDownCast(mesh)) != nullptr)
+    {
+
+    }
+  }
+}
+
+void SurfaceCutter::AcquireEdges(vtkDataSet* mesh, vtkPoints* points, vtkCellArray* edges)
+{
+
+}
+
+void SurfaceCutter::ApplyBoolean(vtkDataSet* mesh, vtkPolyData* loops)
+{
+
 }
