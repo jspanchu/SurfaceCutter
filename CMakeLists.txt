@@ -3,6 +3,8 @@ cmake_minimum_required(VERSION 3.12)
 project (SurfaceCutter)
 
 option (BUILD_EXAMPLE "Build example" ON)
+option (BUILD_TEST "Build test" ON)
+
 if (BUILD_EXAMPLE)
   find_package(VTK COMPONENTS 
       vtkCommonCore
@@ -65,24 +67,46 @@ else ()
     )
 endif () 
 
+file (COPY "${CMAKE_CURRENT_SOURCE_DIR}/data" DESTINATION "${CMAKE_CURRENT_BINARY_DIR}")
+
 if (BUILD_EXAMPLE)
-  add_executable (Example${PROJECT_NAME} 
-    "Example${PROJECT_NAME}.cpp"
+  add_executable (${PROJECT_NAME}_demo 
+    "${PROJECT_NAME}Benchmark.cpp"
    )
    
   if (VTK_VERSION VERSION_LESS "8.90.0")
     # old system
     include(${VTK_USE_FILE})
-    target_link_libraries(Example${PROJECT_NAME} PRIVATE ${VTK_LIBRARIES} ${PROJECT_NAME})
+    target_link_libraries(${PROJECT_NAME}_demo PRIVATE ${VTK_LIBRARIES} ${PROJECT_NAME})
   else ()
     # include all components
-    target_link_libraries(Example${PROJECT_NAME} PRIVATE ${VTK_LIBRARIES} ${PROJECT_NAME})
+    target_link_libraries(${PROJECT_NAME}_demo PRIVATE ${VTK_LIBRARIES} ${PROJECT_NAME})
     # vtk_module_autoinit is needed
     vtk_module_autoinit(
-      TARGETS Example${PROJECT_NAME}
+      TARGETS ${PROJECT_NAME}_demo
+      MODULES ${VTK_LIBRARIES}
+      )
+  endif ()
+endif ()
+
+if (BUILD_TEST)
+  enable_testing()
+  add_executable (${PROJECT_NAME}Test
+    "${PROJECT_NAME}Test.cpp"
+   )
+  add_test(NAME TestSurfaceCutter COMMAND TestSurfaceCutter )
+   
+  if (VTK_VERSION VERSION_LESS "8.90.0")
+    # old system
+    include(${VTK_USE_FILE})
+    target_link_libraries(${PROJECT_NAME}Test PRIVATE ${VTK_LIBRARIES} ${PROJECT_NAME})
+  else ()
+    # include all components
+    target_link_libraries(${PROJECT_NAME}Test PRIVATE ${VTK_LIBRARIES} ${PROJECT_NAME})
+    # vtk_module_autoinit is needed
+    vtk_module_autoinit(
+      TARGETS ${PROJECT_NAME}Test
       MODULES ${VTK_LIBRARIES}
       )
   endif () 
-  file (COPY "${CMAKE_CURRENT_SOURCE_DIR}/Testing" DESTINATION "${CMAKE_CURRENT_BINARY_DIR}")
-
 endif ()

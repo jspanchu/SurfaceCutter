@@ -19,7 +19,7 @@ vtkStandardNewMacro(SurfaceCutter);
 SurfaceCutter::SurfaceCutter()
 {
   this->ComputeBoolean2D = true;
-  this->InsideOut = false; // remove portion inside polygons.
+  this->InsideOut = true; // remove portion outsie polygons.
   this->TagAcquiredPoints = true;
 
   this->SetNumberOfInputPorts(2);
@@ -57,13 +57,14 @@ void SurfaceCutter::SetLoops(vtkDataSet* loops)
 
 int SurfaceCutter::RequestData(vtkInformation* request, vtkInformationVector** inputVector, vtkInformationVector* outputVector)
 {
-  vtkSmartPointer<vtkDataSet> mesh = vtkDataSet::GetData(inputVector[0]->GetInformationObject(0));
+  vtkSmartPointer<vtkDataSet> input = vtkDataSet::GetData(inputVector[0]->GetInformationObject(0));
   vtkSmartPointer<vtkPolyData> loops = vtkPolyData::GetData(inputVector[1]->GetInformationObject(0));
-  vtkSmartPointer<vtkDataSet> outMesh = vtkDataSet::GetData(outputVector->GetInformationObject(0));
+  vtkSmartPointer<vtkDataSet> output = vtkDataSet::GetData(outputVector->GetInformationObject(0));
+
+  output->DeepCopy(input);
 
   if (!loops->GetNumberOfPoints())
   {
-    outMesh->ShallowCopy(mesh);
     return 1;
   }
 
@@ -82,22 +83,23 @@ int SurfaceCutter::RequestData(vtkInformation* request, vtkInformationVector** i
   vtkDataArray* loopsPts = loops->GetPoints()->GetData();
   vtkDataArray* scalars;
   bool dummyAdded = false;
-  if ((scalars = this->GetInputArrayToProcess(0, mesh)) == nullptr)
+  if ((scalars = this->GetInputArrayToProcess(0, input)) == nullptr)
   {
     vtkDebugMacro(<< "Input surface is missing scalars. Will add dummy scalars");
     auto _dummy = vtkSmartPointer<vtkAOSDataArrayTemplate<float>>::New();
     _dummy->SetNumberOfComponents(1);
-    _dummy->SetNumberOfTuples(loops->GetNumberOfPolys());
+    _dummy->SetNumberOfTuples(output->GetNumberOfPoints());
     _dummy->SetName("DummyScalars");
     _dummy->FillValue(0.0);
-    mesh->GetPointData()->AddArray(_dummy);
+    output->GetPointData()->AddArray(_dummy);
+    scalars->ShallowCopy(_dummy);
     dummyAdded = true;
   }
 
   using dispatcher = vtkArrayDispatch::Dispatch3ByValueType<vtkArrayDispatch::Reals, vtkArrayDispatch::Reals, vtkArrayDispatch::Reals>;
-  if (mesh->IsA("vtkPolyData"))
+  if (input->IsA("vtkPolyData"))
   {
-    vtkSmartPointer<vtkPolyData> meshPd = vtkPolyData::SafeDownCast(mesh);
+    vtkSmartPointer<vtkPolyData> meshPd = vtkPolyData::SafeDownCast(output);
     vtkDataArray* points = meshPd->GetPoints()->GetData();
 
     auto worker = SurfCutterImpl(meshPd, loops, scalars->GetName(), this->InsideOut, this->ComputeBoolean2D);
@@ -105,28 +107,23 @@ int SurfaceCutter::RequestData(vtkInformation* request, vtkInformationVector** i
     {
       worker(points, scalars, loopsPts);
     }
-    vtkSmartPointer<vtkPolyData> outMeshPd = vtkPolyData::SafeDownCast(outMesh);
-    outMeshPd->ShallowCopy(meshPd);
   }  
-  else if (mesh->IsA("vtkUnstructuredGrid"))
+  else if (input->IsA("vtkUnstructuredGrid"))
   {
-    vtkSmartPointer<vtkUnstructuredGrid> meshUgrid = vtkUnstructuredGrid::SafeDownCast(mesh);
+    vtkSmartPointer<vtkUnstructuredGrid> meshUgrid = vtkUnstructuredGrid::SafeDownCast(output);
     vtkDataArray* points = meshUgrid->GetPoints()->GetData();
     auto worker = SurfCutterImpl(meshUgrid, loops, scalars->GetName(), this->InsideOut, this->ComputeBoolean2D);
     if (!dispatcher::Execute(points, scalars, loopsPts, worker))
     {
       worker(points, scalars, loopsPts);
     }
-    vtkSmartPointer<vtkUnstructuredGrid> outMeshUgrid = vtkUnstructuredGrid::SafeDownCast(outMesh);
-    outMeshUgrid->ShallowCopy(meshUgrid);
   }
 
   if (dummyAdded)
-    mesh->GetPointData()->RemoveArray("DummyScalars");
+    output->GetPointData()->RemoveArray("DummyScalars");
 
   if (!this->TagAcquiredPoints)
-    mesh->GetPointData()->RemoveArray("Acquired");
+    output->GetPointData()->RemoveArray("Acquired");
 
-  outMesh->ShallowCopy(mesh);
   return 1;
 }
