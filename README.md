@@ -107,7 +107,7 @@ An average over a couple 100 frames should tell who's better.
 So, rotate the mesh with 'Z'/'C' and you should be able to reproduce the below results.
 
 # Benchmarks
-![benchmark.png](illustrations/benchmarks.png)
+![benchmark.png](illustrations/benchmark.png)
 
 [benchmark.html](illustrations/benchmarks.html)
 
