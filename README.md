@@ -120,8 +120,6 @@ it does bounding box tests and returns immediately. Otherwise, there is no consi
 
 Realtime computations can be thrown out the window with [vtkCookieCutter](https://vtk.org/doc/nightly/html/classvtkCookieCutter.html). (Consistently > 1*s*)
 
-
-
 ## Algorithm deets:
 
 * If a *loop* is oriented other than *+/-Z*, then the *loop's* points are projected into a triangle from the surface.
@@ -140,3 +138,9 @@ Here I could've used [vtkDelaunay2D](https://vtk.org/doc/nightly/html/classvtkDe
 * If a triangle lies inside or outside a polygon (depends on the option), it's marked to be discarded.
 
 * At the end, the algorithm collects all triangles that were not marked as *discard* and creates a new mesh.
+
+
+## Translation
+![Translationx](illustrations/translationx.gif)
+![Translationy](illustrations/translationy.gif)
+![rotation](illustrations/rotation.gif)
