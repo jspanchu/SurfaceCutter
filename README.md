@@ -41,6 +41,13 @@ cutter->Update();
 ## InsideOut = false
 ![InsideOut = true](illustrations/testInsideOutFalse.png)
 
+## Translation/Rotation
+With [SurfaceCutter](https://github.com/jaswantp/SurfaceCutter), it should be possible to
+compute the cut mesh in realtime. Below are simple cases.
+![Translationx](illustrations/translationx.gif)
+![Translationy](illustrations/translationy.gif)
+![rotation](illustrations/rotation.gif)
+
 ## SurfaceCutter
 ```
 $ benchmark -m data/Surface.vtu -l data/TestPolys2.vtp
@@ -138,9 +145,3 @@ Here I could've used [vtkDelaunay2D](https://vtk.org/doc/nightly/html/classvtkDe
 * If a triangle lies inside or outside a polygon (depends on the option), it's marked to be discarded.
 
 * At the end, the algorithm collects all triangles that were not marked as *discard* and creates a new mesh.
-
-
-## Translation
-![Translationx](illustrations/translationx.gif)
-![Translationy](illustrations/translationy.gif)
-![rotation](illustrations/rotation.gif)
