@@ -109,6 +109,7 @@ So, rotate the mesh with 'Z'/'C' and you should be able to reproduce the below r
 
 # Benchmarks
 ![benchmarks](illustrations/benchmarks.png)
+[benchmark.html](illustrations/benchmarks.html)
 
 [SurfaceCutter](https://github.com/jaswantp/SurfaceCutter) is slightly faster than
 [vtkClipDataSet](https://vtk.org/doc/nightly/html/classvtkClipDataSet.html). 
