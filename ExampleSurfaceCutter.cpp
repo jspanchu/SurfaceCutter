@@ -38,9 +38,9 @@ public:
     unsigned long vtkNotUsed(eventId),
     void* callData)
   {
-    rotation += 0.1;
+    rotation += 0.5;
     std::cout << rotation << std::endl;
-    meshTransform->RotateZ(0.1);
+    meshTransform->RotateZ(0.5);
     renderWindow->Render();
   }
 };
@@ -55,7 +55,7 @@ int main(int, char* []) {
 
   //auto mesh = vtkSmartPointer<vtkPolyData>::New();
   auto meshReader = vtkSmartPointer<vtkXMLPolyDataReader>::New();
-  meshReader->SetFileName("Testing/triangle.vtp");
+  meshReader->SetFileName("Testing/Triangle.vtp");
 
   auto meshTransformFilter = vtkSmartPointer<vtkTransformFilter>::New();
   meshTransformFilter->SetTransform(meshTransform);
@@ -107,6 +107,7 @@ int main(int, char* []) {
   renderWindowInteractor->CreateRepeatingTimer(1);
 
   RotateCommand* rotateCallback = RotateCommand::New();
+  //renderWindowInteractor->AddObserver(vtkCommand::TimerEvent, rotateCallback);
   renderWindowInteractor->AddObserver(vtkCommand::KeyPressEvent, rotateCallback);
   renderWindowInteractor->Start();
 
