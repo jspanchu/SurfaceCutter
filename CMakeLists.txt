@@ -10,6 +10,7 @@ if (BUILD_EXAMPLE)
       vtkCommonExecutionModel
       vtkCommonTransforms
       vtkFiltersCore
+      vtkFiltersExtraction
       vtkFiltersGeneral
       vtkFiltersModeling
       vtkIOXML
@@ -44,7 +45,7 @@ message (STATUS "VTK_VERSION: ${VTK_VERSION}")
 add_library (${PROJECT_NAME} 
   "${PROJECT_NAME}.cxx"
   "${PROJECT_NAME}.h"
- "${PROJECT_NAME}Impl.h")
+)
 target_include_directories (${PROJECT_NAME} 
   PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>
