@@ -2,6 +2,7 @@
 
 #include <vtkAOSDataArrayTemplate.h>
 #include <vtkArrayDispatch.h>
+#include <vtkBoundingBox.h>
 #include <vtkCellData.h>
 #include <vtkCellIterator.h>
 #include <vtkCleanPolyData.h>
@@ -81,76 +82,6 @@ namespace
   const std::vector<std::vector<vtkIdType>> TRIPTIDS = { {0, 1, 2} };
   const std::vector<std::pair<vtkIdType, vtkIdType>> TRIEDGES = { {0, 1}, {1, 2}, {2, 0} };
 
-  template<typename T>
-  struct BBox {
-    BBox() {}
-    BBox(const std::array<T, 3>& p0, const std::array<T, 3>& p1) {
-      left = std::min(p0[0], p1[0]);
-      right = std::max(p0[0], p1[0]);
-      bottom = std::min(p0[1], p1[1]);
-      top = std::max(p0[1], p1[1]);
-    }
-    BBox(const std::vector<T>& xs, const std::vector<T>& ys)
-    {
-      left = *std::min_element(xs.begin(), xs.end());
-      right = *std::max_element(xs.begin(), xs.end());
-      bottom = *std::min_element(ys.begin(), ys.end());
-      top = *std::max_element(ys.begin(), ys.end());
-    }
-    BBox(const std::vector<std::array<T, 3>>& points)
-    {
-      std::vector<T> xs, ys;
-      xs.reserve(points.size()); ys.reserve(points.size());
-      for (const auto& point : points)
-      {
-        xs.emplace_back(point[0]); ys.emplace_back(point[1]);
-      }
-      left = *std::min_element(xs.begin(), xs.end());
-      right = *std::max_element(xs.begin(), xs.end());
-      bottom = *std::min_element(ys.begin(), ys.end());
-      top = *std::max_element(ys.begin(), ys.end());
-    }
-    BBox(const std::array<T, 4>& bbox)
-    {
-      left = bbox[0]; right = bbox[1]; bottom = bbox[2]; top = bbox[3];
-    }
-    BBox(const std::array<T, 6>& bbox)
-    {
-      left = bbox[0]; right = bbox[1]; bottom = bbox[2]; top = bbox[3];
-    }
-    T left;
-    T right;
-    T bottom;
-    T top;
-    inline T width() const noexcept { return right - left; }
-    inline T height() const noexcept { return top - bottom; }
-    inline T diagonal() const { return std::hypot(right - left, top - bottom); }
-  };
-
-  template<typename T1, typename T2>
-  inline static bool fullyOutsideBbox(const BBox<T1>& bbox1, const BBox<T2>& bbox2, bool yDownward = false) noexcept {
-    if (!yDownward)
-    {
-      return (bbox2.left > bbox1.right || bbox2.right < bbox1.left || bbox2.top < bbox1.bottom || bbox2.bottom > bbox1.top);
-    }
-    else
-    {
-      return (bbox2.left > bbox1.right || bbox2.right < bbox1.left || bbox2.top > bbox1.bottom || bbox2.bottom < bbox1.top);
-    }
-  }
-
-  template<typename T1, typename T2>
-  inline static bool intersectBbox(const BBox<T1>& bbox1, const BBox<T2>& bbox2, bool yDownward = false) noexcept {
-    if (!yDownward)
-    {
-      return (bbox1.left <= bbox2.right && bbox1.right >= bbox2.left && bbox1.bottom <= bbox2.top && bbox1.top > bbox2.bottom);
-    }
-    else
-    {
-      return (bbox1.left <= bbox2.right && bbox1.right >= bbox2.left && bbox1.top <= bbox2.bottom && bbox1.bottom > bbox2.top);
-    }
-  }
-
   /**
      * @brief Point-in-polygon. Handle degenerate cases too. https://wrf.ecse.rpi.edu/Research/Short_Notes/pnpoly.html
      * @param nvert Number of vertices in the polygon.
@@ -210,7 +141,7 @@ namespace
   }
 
   template<typename T>
-  static std::vector<std::array<T, 3>> clockWise(const std::vector<std::array<T, 3>>& points, const std::array<T, 3>& center, std::vector<std::size_t>& sortedIndices)
+  std::vector<std::array<T, 3>> clockWise(const std::vector<std::array<T, 3>>& points, const std::array<T, 3>& center, std::vector<std::size_t>& sortedIndices)
   {
     std::vector<T> angles;
     std::vector<std::array<T, 3>> cw;
@@ -231,14 +162,14 @@ namespace
   }
 
   template<typename T>
-  static std::vector<std::array<T, 3>> clockWise(const std::vector<std::array<T, 3>>& points, const std::array<T, 3>& center)
+  std::vector<std::array<T, 3>> clockWise(const std::vector<std::array<T, 3>>& points, const std::array<T, 3>& center)
   {
     std::vector<std::size_t> sortedIndices;
     return clockWise(points, center, sortedIndices);
   }
 
   template<typename T>
-  static std::vector<std::array<T, 3>> counterClockWise(const std::vector<std::array<T, 3>>& points, const std::array<T, 3>& center, std::vector<std::size_t>& sortedIndices)
+  std::vector<std::array<T, 3>> counterClockWise(const std::vector<std::array<T, 3>>& points, const std::array<T, 3>& center, std::vector<std::size_t>& sortedIndices)
   {
     std::vector<std::array<T, 3>> ccw;
     ccw = clockWise(points, center, sortedIndices);
@@ -248,7 +179,7 @@ namespace
   }
 
   template<typename T>
-  static std::vector<std::array<T, 3>> counterClockWise(const std::vector<std::array<T, 3>>& points, const std::array<T, 3>& center)
+  std::vector<std::array<T, 3>> counterClockWise(const std::vector<std::array<T, 3>>& points, const std::array<T, 3>& center)
   {
     std::vector<std::size_t> sortedIndices;
     return counterClockWise(points, center, sortedIndices);
@@ -400,7 +331,7 @@ namespace
   struct ClipperMeta {
     std::vector<std::array<ClipPtsType, 3>> coords;
     std::vector<std::pair<vtkIdType, vtkIdType>> edges;
-    std::vector<BBox<ClipPtsType>> edgeBboxes, polyBboxes;
+    std::vector<vtkBoundingBox> edgeBboxes, polyBboxes;
     std::vector<int> insideOut;
     std::vector<std::vector<ClipPtsType>> xs, ys;
 
@@ -445,7 +376,7 @@ namespace
     std::array<ScalarsType, 3> scalars;
     std::array<int, 3> pCrits;
     std::array<vtkIdType, 3> verts;
-    BBox<MeshPtsType> bbox;
+    vtkBoundingBox bbox;
     bool discard = false;
   };
 
@@ -509,10 +440,11 @@ namespace
         newTriInfo.scalars[iPt] = meshInfo[newTriInfo.verts[iPt]].scalar;
         newTriInfo.pCrits[iPt] = meshInfo[newTriInfo.verts[iPt]].pCrit;
       }
-      newTriInfo.bbox.left = *std::min_element(newTriInfo.xs.begin(), newTriInfo.xs.end());
-      newTriInfo.bbox.right = *std::max_element(newTriInfo.xs.begin(), newTriInfo.xs.end());
-      newTriInfo.bbox.bottom = *std::min_element(newTriInfo.ys.begin(), newTriInfo.ys.end());
-      newTriInfo.bbox.top = *std::max_element(newTriInfo.ys.begin(), newTriInfo.ys.end());
+      double xmin = *std::min_element(newTriInfo.xs.begin(), newTriInfo.xs.end());
+      double xmax = *std::max_element(newTriInfo.xs.begin(), newTriInfo.xs.end());
+      double ymin = *std::min_element(newTriInfo.ys.begin(), newTriInfo.ys.end());
+      double ymax = *std::max_element(newTriInfo.ys.begin(), newTriInfo.ys.end());
+      newTriInfo.bbox = vtkBoundingBox(xmin, xmax, ymin, ymax, 0.0, 0.0);
       trisInfo.emplace_back(newTriInfo);
     }
   }
@@ -529,7 +461,7 @@ namespace
     {
       if (!clipperInfo.insideOut[iPoly])
       {
-        if (fullyOutsideBbox(triInfo.bbox, polyBbox))
+        if (!(polyBbox.Contains(triInfo.bbox) || polyBbox.Intersects(triInfo.bbox)))
         {
           ++iPoly;
           continue;
@@ -658,8 +590,6 @@ namespace
     vtkSmartPointer<vtkPolyData> clipper;
     bool insideOut;
     std::string scalarsName;
-
-
 
     template<typename MeshPtsType, typename ScalarsType>
     vtkSmartPointer<vtkDataSet> CreateMesh(const std::vector<MeshMeta<MeshPtsType, ScalarsType>>& meshInfos, const std::vector<std::vector<vtkIdType>>& cells)
@@ -854,16 +784,25 @@ namespace
           const vtkIdType& p0 = ptIds->GetId(p0Id);
           const vtkIdType& p1 = ptIds->GetId(p1Id);
           clipperInfo.edges.emplace_back(p0, p1);
-          clipperInfo.edgeBboxes.emplace_back(BBox<ClipPointsType>(clipperInfo.coords[p0], clipperInfo.coords[p1]));
+          double xmin = std::min(clipperInfo.coords[p0][0], clipperInfo.coords[p1][0]);
+          double xmax = std::max(clipperInfo.coords[p0][0], clipperInfo.coords[p1][0]);
+          double ymin = std::min(clipperInfo.coords[p0][1], clipperInfo.coords[p1][1]);
+          double ymax = std::max(clipperInfo.coords[p0][1], clipperInfo.coords[p1][1]);
+          clipperInfo.edgeBboxes.emplace_back(vtkBoundingBox(xmin, xmax, ymin, ymax, 0.0, 0.0));
           _xs[idx] = clipperInfo.coords[p0][0];
           _ys[idx] = clipperInfo.coords[p0][1];
         }
         clipperInfo.xs.emplace_back(_xs);
         clipperInfo.ys.emplace_back(_ys);
-        clipperInfo.polyBboxes.emplace_back(BBox<ClipPointsType>(_xs, _ys));
+        double xmin = *std::min_element(_xs.begin(), _xs.end());
+        double xmax = *std::max_element(_xs.begin(), _xs.end());
+        double ymin = *std::min_element(_ys.begin(), _ys.end());
+        double ymax = *std::max_element(_ys.begin(), _ys.end());
+        clipperInfo.polyBboxes.emplace_back(vtkBoundingBox(xmin, xmax, ymin, ymax, 0.0, 0.0));
         clipperInfo.insideOut.emplace_back(insideOutsAccess.Get(iPoly, 0));
       }
 
+      // now store clipper coordinates as MeshPtsType.
       std::vector<std::array<MeshPtsType, 3>> clipperCoords;
       clipperCoords.reserve(numClipPoints + 100); // extra space for self-intersections.
       for (const auto& clipperCoord : clipperInfo.coords)
@@ -902,6 +841,10 @@ namespace
       // build submesh
       // add new tris.
       // remove inside/outside.
+
+      ///> A The sub-mesh after interpolation might consist of 
+      /// 1. the actual triangle.
+      /// 2. all polyPoints that are enclosed by that triangle.
       const std::size_t numTris1 = trisInfo.size();
       for (std::size_t iTri = 0; iTri < numTris1; ++iTri)
       {
@@ -914,9 +857,6 @@ namespace
           smInfo.emplace_back(MMeta(triInfo.coords[iPt], triInfo.scalars[iPt], triInfo.pCrits[iPt], triInfo.verts[iPt]));
         }
 
-        ///> A The sub-mesh after interpolation might consist of 
-        /// 1. the actual triangle.
-        /// 2. all polyPoints that are enclosed by that triangle.
         for (auto& clipperCoord : clipperCoords)
         {
           if (!pnpoly(3, triInfo.xs.data(), triInfo.ys.data(), clipperCoord[0], clipperCoord[1]))
@@ -993,7 +933,7 @@ namespace
           const auto& pb_0 = clipperCoords[clipperEdge.second];
           const auto& bbox_0 = clipperInfo.edgeBboxes[iClipEdge];
 
-          if (!intersectBbox(bbox_0, triInfo.bbox))
+          if (!bbox_0.Intersects(triInfo.bbox))
             continue;
 
           clipperEdgeCrossings.reserve(3);
@@ -1083,15 +1023,6 @@ namespace
             ++niters;
             if (niters > 32)
             {
-              auto writer = vtkSmartPointer<vtkXMLPolyDataWriter>::New();
-              writer->SetFileName("SubMeshTri.vtp");
-              writer->SetInputData(subMeshTris);
-              writer->Write();
-              writer->SetFileName("meshtri.vtp");
-              writer->SetInputData(mesh);
-              writer->Write();
-              __debugbreak();
-              //constraintWorker(points);
               break;
             }
           }
