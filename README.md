@@ -107,8 +107,7 @@ An average over a couple 100 frames should tell who's better.
 So, rotate the mesh with 'Z'/'C' and you should be able to reproduce the below results.
 
 # Benchmarks
-<img src="illustrations/benchmarks.png" alt="drawing" width="1920"/>
-
+[benchmark.png](illustrations/benchmarks.png)
 [benchmark.html](illustrations/benchmarks.html)
 
 [SurfaceCutter](https://github.com/jaswantp/SurfaceCutter) is slightly faster than
