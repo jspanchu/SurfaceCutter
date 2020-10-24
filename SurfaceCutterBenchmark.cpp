@@ -113,7 +113,7 @@ int main(int argc, char** argv) {
   {
     if ((std::string(argv[arg]) == "-h") || (std::string(argv[arg]) == "--help"))
     {
-      ShowUsage(argv[arg]);
+      ShowUsage(argv[0]);
       ShowControls();
       return EXIT_FAILURE;
     }
