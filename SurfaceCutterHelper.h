@@ -29,7 +29,7 @@
 namespace compgeom
 {
   /**
-     * @brief Point-in-polygon. Handle degenerate cases too. https://wrf.ecse.rpi.edu/Research/Short_Notes/compgeom::pnpoly.html
+     * @brief Point-in-polygon. Handle degenerate cases too. https://wrf.ecse.rpi.edu/Research/Short_Notes/pnpoly.html
      * @param nvert Number of vertices in the polygon.
      * @param vertx Array containing the x-coordinates of the polygon's vertices.
      * @param verty Array containing the y-coordinates of the polygon's vertices.
