@@ -94,7 +94,7 @@ int SurfaceCutter::RequestData(vtkInformation* request, vtkInformationVector** i
     _dummy->SetName("DummyScalars");
     _dummy->FillValue(0.0);
     output->GetPointData()->AddArray(_dummy);
-    scalars->ShallowCopy(_dummy);
+    scalars = _dummy;
     dummyAdded = true;
   }
 
