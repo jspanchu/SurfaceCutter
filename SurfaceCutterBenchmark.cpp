@@ -5,6 +5,7 @@
 #include <vtkCommand.h>
 #include <vtkCylinderSource.h>
 #include <vtkDataSetMapper.h>
+#include <vtkDataSetSurfaceFilter.h>
 #include <vtkGeometryFilter.h>
 #include <vtkImplicitSelectionLoop.h>
 #include <vtkInteractorStyleTrackballCamera.h>
@@ -181,10 +182,10 @@ int main(int argc, char** argv) {
     meshTransformFilter->SetInputData(meshPd);
   else if (meshUgrid)
   {
-    auto geometry = vtkSmartPointer<vtkGeometryFilter>::New();
-    geometry->SetInputData(meshUgrid);
-    geometry->Update();
-    meshTransformFilter->SetInputData(geometry->GetOutput());
+    auto surf = vtkSmartPointer<vtkDataSetSurfaceFilter>::New();
+    surf->SetInputData(meshUgrid);
+    surf->Update();
+    meshTransformFilter->SetInputData(surf->GetOutput());
   }
 
   auto loopsReader = vtkSmartPointer<vtkXMLPolyDataReader>::New();
@@ -197,7 +198,6 @@ int main(int argc, char** argv) {
     surfCutter_->SetInputConnection(0, meshTransformFilter->GetOutputPort());
     surfCutter_->SetInputConnection(1, loopsReader->GetOutputPort());
     surfCutter_->SetInsideOut(insideOut);
-    surfCutter_->SetInputArrayToProcess(0, 0, 0, vtkDataObject::FIELD_ASSOCIATION_POINTS, "Elevation");
     surfCutter = vtkAlgorithm::SafeDownCast(surfCutter_);
   }
   else if (useCookieCutter)

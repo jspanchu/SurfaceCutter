@@ -25,7 +25,7 @@ SurfaceCutter::SurfaceCutter()
   this->SetNumberOfInputPorts(2);
   this->SetNumberOfOutputPorts(1);
 
-  this->SetInputArrayToProcess(0, 0, 0, vtkDataObject::FIELD_ASSOCIATION_POINTS, vtkDataSetAttributes::SCALARS);
+  this->SetInputArrayToProcess(0, 0, 0, vtkDataObject::FIELD_ASSOCIATION_POINTS, vtkDataSetAttributes::AttributeTypes::SCALARS);
 
   vtkDebugMacro(<< "Initialized " << this->GetClassNameInternal());
 }
@@ -65,7 +65,6 @@ int SurfaceCutter::RequestData(vtkInformation* request, vtkInformationVector** i
   {
     return 1;
   }
-
   output->DeepCopy(input);
   auto loops = vtkSmartPointer<vtkPolyData>::New();
   loops->DeepCopy(loopsIn);
@@ -85,7 +84,8 @@ int SurfaceCutter::RequestData(vtkInformation* request, vtkInformationVector** i
   vtkDataArray* loopsPts = loops->GetPoints()->GetData();
   vtkDataArray* scalars;
   bool dummyAdded = false;
-  if ((scalars = this->GetInputArrayToProcess(0, input)) == nullptr)
+  int assoc = vtkDataObject::FIELD_ASSOCIATION_POINTS;
+  if ((scalars = this->GetInputArrayToProcess(0, 0, inputVector, assoc)) == nullptr)
   {
     vtkDebugMacro(<< "Input surface is missing scalars. Will add dummy scalars");
     auto _dummy = vtkSmartPointer<vtkAOSDataArrayTemplate<float>>::New();
