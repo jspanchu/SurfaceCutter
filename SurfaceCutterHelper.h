@@ -782,14 +782,14 @@ namespace
         meshInfo[tupleIdx].isAcquired = acquisition->GetValue(tupleIdx);
         meshInfo[tupleIdx].originalIdx = tupleIdx;
       }
-      trisInfo.reserve(trisInfo.size() + numCells);
-      tris.reserve(tris.size() + numCells);
+      trisInfo.reserve(numCells);
+      tris.reserve(numCells);
 
       extractTris(mesh, tris, meshInfo, meshInfo, trisInfo);
 
       meshInfo.reserve(meshInfo.size() + numLoopsPoints * 3 * 3); // 3 new triangles per loop's point, 3 new intersection points per triangle.
       trisInfo.reserve(trisInfo.size() + numLoopsPoints * 3 * 3 * 3); // same as meshInfo, further 3 sub triangles per each new triangle.
-      tris.reserve(tris.size() + numLoopsPoints * 3 * 3 * 3); // same as trisInfo
+      tris.reserve(trisInfo.capacity()); // same as trisInfo
 
       // for each tri.
       // interp.
@@ -963,6 +963,7 @@ namespace
         std::vector<std::vector<vtkIdType>> cells;
         cells.emplace_back(std::vector<vtkIdType>(ccwIds_.begin(), ccwIds_.end()));
 
+#if 0
         vtkSmartPointer<vtkDataSet> subMesh = CreateMesh<PointsT, ScalarsT>(smInfo, cells);
         auto subMeshTris = vtkSmartPointer<vtkPolyData>::New();
         auto triangulate = vtkSmartPointer<vtkTriangleFilter>::New();
@@ -989,8 +990,9 @@ namespace
             }
           }
         }
+#endif
         const std::size_t oldSz = trisInfo.size();
-        extractTris(subMeshTris, tris, smInfo, meshInfo, trisInfo);
+        //extractTris(subMeshTris, tris, smInfo, meshInfo, trisInfo);
         const std::size_t newSz = trisInfo.size();
 
         for (std::size_t iInfo = oldSz; iInfo < newSz; ++iInfo)
