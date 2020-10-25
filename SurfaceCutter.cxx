@@ -19,7 +19,7 @@ vtkStandardNewMacro(SurfaceCutter);
 SurfaceCutter::SurfaceCutter()
 {
   this->ComputeBoolean2D = true;
-  this->InsideOut = true; // remove portion outsie polygons.
+  this->InsideOut = true; // remove portion outside polygons.
   this->TagAcquiredPoints = true;
 
   this->SetNumberOfInputPorts(2);
@@ -58,15 +58,17 @@ void SurfaceCutter::SetLoops(vtkDataSet* loops)
 int SurfaceCutter::RequestData(vtkInformation* request, vtkInformationVector** inputVector, vtkInformationVector* outputVector)
 {
   vtkSmartPointer<vtkDataSet> input = vtkDataSet::GetData(inputVector[0]->GetInformationObject(0));
-  vtkSmartPointer<vtkPolyData> loops = vtkPolyData::GetData(inputVector[1]->GetInformationObject(0));
+  vtkSmartPointer<vtkPolyData> loopsIn = vtkPolyData::GetData(inputVector[1]->GetInformationObject(0));
   vtkSmartPointer<vtkDataSet> output = vtkDataSet::GetData(outputVector->GetInformationObject(0));
 
-  output->DeepCopy(input);
-
-  if (!loops->GetNumberOfPoints())
+  if (!loopsIn->GetNumberOfPoints())
   {
     return 1;
   }
+
+  output->DeepCopy(input);
+  auto loops = vtkSmartPointer<vtkPolyData>::New();
+  loops->DeepCopy(loopsIn);
 
   vtkDataArray* insideOuts;
   if ((insideOuts = loops->GetCellData()->GetArray("InsideOuts")) == nullptr)
@@ -97,7 +99,7 @@ int SurfaceCutter::RequestData(vtkInformation* request, vtkInformationVector** i
   }
 
   using dispatcher = vtkArrayDispatch::Dispatch3ByValueType<vtkArrayDispatch::Reals, vtkArrayDispatch::Reals, vtkArrayDispatch::Reals>;
-  if (input->IsA("vtkPolyData"))
+  if (output->IsA("vtkPolyData"))
   {
     vtkSmartPointer<vtkPolyData> meshPd = vtkPolyData::SafeDownCast(output);
     vtkDataArray* points = meshPd->GetPoints()->GetData();
@@ -108,7 +110,7 @@ int SurfaceCutter::RequestData(vtkInformation* request, vtkInformationVector** i
       worker(points, scalars, loopsPts);
     }
   }  
-  else if (input->IsA("vtkUnstructuredGrid"))
+  else if (output->IsA("vtkUnstructuredGrid"))
   {
     vtkSmartPointer<vtkUnstructuredGrid> meshUgrid = vtkUnstructuredGrid::SafeDownCast(output);
     vtkDataArray* points = meshUgrid->GetPoints()->GetData();

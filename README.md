@@ -74,7 +74,7 @@ $ benchmark -m data/Surface.vtu -l data/TestPolys2.vtp --vtkclipdataset
 [vtkCookieCutter](https://vtk.org/doc/nightly/html/classvtkCookieCutter.html)
 This filter doesn't yet support insideOut functionality. Check out [this MR](https://gitlab.kitware.com/vtk/vtk/-/merge_requests/5731)
 ```
-$ benchmark -m data/Surface.vtu -l data/TestPolys2.vtp --vtkclipdataset
+$ benchmark -m data/Surface.vtu -l data/TestPolys2.vtp --vtkcookiecutter
 ```
 *hmmm... oh no*
 ![vtkCookieCutter result](illustrations/vtkCookieCutter.png)

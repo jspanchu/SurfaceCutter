@@ -65,6 +65,10 @@ else ()
     TARGETS ${PROJECT_NAME}
     MODULES ${VTK_LIBRARIES}
     )
+  target_compile_options(${PROJECT_NAME} PRIVATE "$<$<CONFIG:Release>:/Z7>")
+  target_link_options(${PROJECT_NAME} PRIVATE "$<$<CONFIG:Release>:/DEBUG>")
+  target_link_options(${PROJECT_NAME} PRIVATE "$<$<CONFIG:Release>:/OPT:REF>")
+  target_link_options(${PROJECT_NAME} PRIVATE "$<$<CONFIG:Release>:/OPT:ICF>")
 endif () 
 
 file (COPY "${CMAKE_CURRENT_SOURCE_DIR}/data" DESTINATION "${CMAKE_CURRENT_BINARY_DIR}")
@@ -87,6 +91,10 @@ if (BUILD_EXAMPLE)
       MODULES ${VTK_LIBRARIES}
       )
   endif ()
+  target_compile_options(benchmark PRIVATE "$<$<CONFIG:Release>:/Zi>")
+  target_link_options(benchmark PRIVATE "$<$<CONFIG:Release>:/DEBUG>")
+  target_link_options(benchmark PRIVATE "$<$<CONFIG:Release>:/OPT:REF>")
+  target_link_options(benchmark PRIVATE "$<$<CONFIG:Release>:/OPT:ICF>")
 endif ()
 
 if (BUILD_TEST)

@@ -288,6 +288,7 @@ namespace
     std::vector<vtkBoundingBox> edgeBboxes, polyBboxes;
     std::vector<int> insideOut;
     std::vector<std::vector<LoopsPointsT>> xs, ys;
+    std::vector<vtkIdType> numLoopPts;
 
     inline void reserve(const vtkIdType& numCells, const vtkIdType& numPoints)
     {
@@ -315,11 +316,11 @@ namespace
   template<typename PointsT, typename ScalarsT>
   struct MeshMeta {
     MeshMeta() {}
-    MeshMeta(const std::array<PointsT, 3>& coord, const ScalarsT& scalar, const int& pCrit, const vtkIdType& originalIdx)
-      : coord(coord), scalar(scalar), pCrit(pCrit), originalIdx(originalIdx) {}
+    MeshMeta(const std::array<PointsT, 3>& coord_, const ScalarsT& scalar_, const int& isAcquired_, const vtkIdType& originalIdx_)
+      : coord(coord_), scalar(scalar_), isAcquired(isAcquired_), originalIdx(originalIdx_) {}
     std::array<PointsT, 3> coord;
     ScalarsT scalar;
-    int pCrit;
+    int isAcquired;
     vtkIdType originalIdx;
   };
 
@@ -328,7 +329,7 @@ namespace
     std::array<PointsT, 3> xs, ys;
     std::array<std::array<PointsT, 3>, 3> coords;
     std::array<ScalarsT, 3> scalars;
-    std::array<int, 3> pCrits;
+    std::array<int, 3> isAcquired;
     std::array<vtkIdType, 3> verts;
     vtkBoundingBox bbox;
     bool discard = false;
@@ -392,7 +393,7 @@ namespace
         newTriInfo.ys[iPt] = newTriInfo.coords[iPt][1];
 
         newTriInfo.scalars[iPt] = meshInfo[newTriInfo.verts[iPt]].scalar;
-        newTriInfo.pCrits[iPt] = meshInfo[newTriInfo.verts[iPt]].pCrit;
+        newTriInfo.isAcquired[iPt] = meshInfo[newTriInfo.verts[iPt]].isAcquired;
       }
       double xmin = *std::min_element(newTriInfo.xs.begin(), newTriInfo.xs.end());
       double xmax = *std::max_element(newTriInfo.xs.begin(), newTriInfo.xs.end());
@@ -576,7 +577,7 @@ namespace
           pointsData->SetTypedComponent(tupleIdx, iDim, meshInfos[tupleIdx].coord[iDim]);
 
         scalars->SetValue(tupleIdx, meshInfos[tupleIdx].scalar);
-        acquisition->SetValue(tupleIdx, meshInfos[tupleIdx].pCrit);
+        acquisition->SetValue(tupleIdx, meshInfos[tupleIdx].isAcquired);
       }
 
       auto pts = vtkSmartPointer<vtkPoints>::New();
@@ -640,7 +641,7 @@ namespace
           pointsData->SetTypedComponent(tupleIdx, iDim, meshInfos[tupleIdx].coord[iDim]);
 
         scalars->SetValue(tupleIdx, meshInfos[tupleIdx].scalar);
-        acquisition->SetValue(tupleIdx, meshInfos[tupleIdx].pCrit);
+        acquisition->SetValue(tupleIdx, meshInfos[tupleIdx].isAcquired);
       }
 
       auto pts = vtkSmartPointer<vtkPoints>::New();
@@ -692,7 +693,6 @@ namespace
       using MeshPtsAccess = vtkDataArrayAccessor<MeshPointsArrayT>;
       using ScalarsAccess = vtkDataArrayAccessor<ScalarsArrayT>;
       using LoopsPointsAccess = vtkDataArrayAccessor<LoopsPointsArrayT>;
-      using IntArrAccess = vtkDataArrayAccessor<vtkAOSDataArrayTemplate<int>>;
 
       using PointsT = MeshPtsAccess::APIType;
       using ScalarsT = ScalarsAccess::APIType;
@@ -709,7 +709,6 @@ namespace
       MeshPtsAccess meshPtsAccess(meshPts);
       LoopsPointsAccess loopsPointsAccess(loopsPts);
       ScalarsAccess scalarsAccess(scalars);
-      IntArrAccess insideOutsAccess(insideOuts);
 
       LMeta loopsInfo;
       TMeta triInfo;
@@ -733,27 +732,33 @@ namespace
 
         for (vtkIdType idx = 0; idx < numIds; ++idx)
         {
+          // information pertaining to an edge of a loop
           const vtkIdType& p0Id = idx;
           const vtkIdType p1Id = (idx + 1) % numIds ? idx + 1 : 0;
           const vtkIdType& p0 = ptIds->GetId(p0Id);
           const vtkIdType& p1 = ptIds->GetId(p1Id);
           loopsInfo.edges.emplace_back(p0, p1);
+
           double xmin = std::min(loopsInfo.coords[p0][0], loopsInfo.coords[p1][0]);
           double xmax = std::max(loopsInfo.coords[p0][0], loopsInfo.coords[p1][0]);
           double ymin = std::min(loopsInfo.coords[p0][1], loopsInfo.coords[p1][1]);
           double ymax = std::max(loopsInfo.coords[p0][1], loopsInfo.coords[p1][1]);
           loopsInfo.edgeBboxes.emplace_back(vtkBoundingBox(xmin, xmax, ymin, ymax, 0.0, 0.0));
+
           _xs[idx] = loopsInfo.coords[p0][0];
           _ys[idx] = loopsInfo.coords[p0][1];
         }
-        loopsInfo.xs.emplace_back(_xs);
-        loopsInfo.ys.emplace_back(_ys);
+        
+        // information pertaining to loop polygon
         double xmin = *std::min_element(_xs.begin(), _xs.end());
         double xmax = *std::max_element(_xs.begin(), _xs.end());
         double ymin = *std::min_element(_ys.begin(), _ys.end());
         double ymax = *std::max_element(_ys.begin(), _ys.end());
+        loopsInfo.xs.emplace_back(_xs);
+        loopsInfo.ys.emplace_back(_ys);
+        loopsInfo.insideOut.emplace_back(insideOuts->GetValue(iPoly));
+        loopsInfo.numLoopPts.emplace_back(numIds);
         loopsInfo.polyBboxes.emplace_back(vtkBoundingBox(xmin, xmax, ymin, ymax, 0.0, 0.0));
-        loopsInfo.insideOut.emplace_back(insideOutsAccess.Get(iPoly, 0));
       }
 
       // now store loops coordinates as PointsT.
@@ -774,7 +779,7 @@ namespace
       {
         meshPtsAccess.Get(tupleIdx, meshInfo[tupleIdx].coord.data());
         meshInfo[tupleIdx].scalar = scalarsAccess.Get(tupleIdx, 0);
-        meshInfo[tupleIdx].pCrit = acquisition->GetValue(tupleIdx);
+        meshInfo[tupleIdx].isAcquired = acquisition->GetValue(tupleIdx);
         meshInfo[tupleIdx].originalIdx = tupleIdx;
       }
       trisInfo.reserve(trisInfo.size() + numCells);
@@ -808,7 +813,7 @@ namespace
 
         for (vtkIdType iPt = 0; iPt < 3; ++iPt)
         {
-          smInfo.emplace_back(MMeta(triInfo.coords[iPt], triInfo.scalars[iPt], triInfo.pCrits[iPt], triInfo.verts[iPt]));
+          smInfo.emplace_back(MMeta(triInfo.coords[iPt], triInfo.scalars[iPt], triInfo.isAcquired[iPt], triInfo.verts[iPt]));
         }
 
         for (auto& loopsCoord : loopsCoords)
@@ -853,9 +858,10 @@ namespace
       }
 
       ///> B Now insert loops's edges into triangles. 
-      /// 1. An intersection of any triEdge with loopsEdge. (points)
-      /// 2. A triEdge that does not intersect with any loopsEdge. (lines)
-      /// 3. All permutations of intersection with triPts. (lines)
+      /// 1. Throw loops edges onto triangles and see if any of either intersect.
+      /// 2. Triangulate the actual triangle + intersection points.
+      /// 3. Identify pairs of intersections as constraints.
+      /// 4. Apply constraints on the sub mesh.
       const std::size_t numTris2 = trisInfo.size();
       for (std::size_t iTri = 0; iTri < numTris2; ++iTri)
       {
@@ -868,7 +874,7 @@ namespace
 
         for (vtkIdType iPt = 0; iPt < 3; ++iPt)
         {
-          smInfo.emplace_back(MMeta(triInfo.coords[iPt], triInfo.scalars[iPt], triInfo.pCrits[iPt], triInfo.verts[iPt]));
+          smInfo.emplace_back(MMeta(triInfo.coords[iPt], triInfo.scalars[iPt], triInfo.isAcquired[iPt], triInfo.verts[iPt]));
         }
 
         std::vector<std::array<PointsT, 3>> triEdgeCrossings;
@@ -912,7 +918,7 @@ namespace
 
               triCrossLoopEdge |= true;
 
-              auto smPt = MMeta(pc, newScalar, int(0), meshInfo.size()); // flip 0 to 1, does it make a diff?
+              auto smPt = MMeta(pc, newScalar, int(0), meshInfo.size());
               smInfo.emplace_back(smPt);
               meshInfo.emplace_back(smPt);
 
