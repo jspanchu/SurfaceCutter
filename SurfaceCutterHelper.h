@@ -661,9 +661,9 @@ namespace
     template<typename MeshPointsArrayT, typename ScalarsArrayT, typename LoopsPointsArrayT>
     void operator()(MeshPointsArrayT* meshPts, ScalarsArrayT* scalars, LoopsPointsArrayT* loopsPts)
     {
-      const vtkIdType& numPolys = loops->GetNumberOfCells();
+      const vtkIdType& numLoops = loops->GetNumberOfCells();
       const vtkIdType& numCells = mesh->GetNumberOfCells();
-      if (!(numPolys && numCells))
+      if (!(numLoops && numCells))
         return;
 
       const vtkIdType& numLoopsPoints = loopsPts->GetNumberOfTuples();
@@ -713,6 +713,7 @@ namespace
       LMeta loopsInfo;
       TMeta triInfo;
 
+      loopsInfo.reserve(numLoops, numLoopsPoints);
       ///> loops info.
       for (vtkIdType iPt = 0; iPt < numLoopsPoints; ++iPt)
       {
@@ -786,9 +787,11 @@ namespace
       tris.reserve(numCells);
 
       extractTris(mesh, tris, meshInfo, meshInfo, trisInfo);
-
-      meshInfo.reserve(meshInfo.size() + numLoopsPoints * 3 * 3); // 3 new triangles per loop's point, 3 new intersection points per triangle.
-      trisInfo.reserve(trisInfo.size() + numLoopsPoints * 3 * 3 * 3); // same as meshInfo, further 3 sub triangles per each new triangle.
+      
+      // 3 new triangles per loop's point, 3 new intersection points per triangle, 3 new intersection points for edge.
+      meshInfo.reserve(meshInfo.size() + numLoopsPoints * 3 * 3 * 3); 
+      // same as meshInfo, further 3 sub triangles per each new triangle.
+      trisInfo.reserve(trisInfo.size() + numLoopsPoints * 3 * 3 * 3); 
       tris.reserve(trisInfo.capacity()); // same as trisInfo
 
       // for each tri.
@@ -871,11 +874,8 @@ namespace
 
         std::vector<MMeta> smInfo;
         smInfo.reserve(loopsCoords.size());
-
         for (vtkIdType iPt = 0; iPt < 3; ++iPt)
-        {
           smInfo.emplace_back(MMeta(triInfo.coords[iPt], triInfo.scalars[iPt], triInfo.isAcquired[iPt], triInfo.verts[iPt]));
-        }
 
         std::vector<std::array<PointsT, 3>> triEdgeCrossings;
         bool triCrossLoopEdge(false);
@@ -883,11 +883,12 @@ namespace
 
         vtkIdType iLoopEdge(-1);
         std::map<vtkIdType, vtkIdType> constraints;
-        for (const auto& loopsEdge : loopsInfo.edges) // for each loops's edge
+        std::vector<vtkIdType> loopsEdgeCrossings;
+        std::vector<vtkIdType> triHitAt;
+        for (const auto& loopsEdge : loopsInfo.edges) // for each loops' edge
         {
-          std::vector<vtkIdType> loopsEdgeCrossings;
-          std::vector<vtkIdType> triHitAt;
-
+          loopsEdgeCrossings.clear();
+          triHitAt.clear();
           ++iLoopEdge;
           const auto& pa_0 = loopsCoords[loopsEdge.first];
           const auto& pb_0 = loopsCoords[loopsEdge.second];
@@ -943,7 +944,7 @@ namespace
             constraints[loopsEdgeCrossings[0]] = oppositeVtx;
           }
 
-        } // end for loops's edge
+        } // end for loops' edge
         if (!triCrossLoopEdge)
         {
           if (computeBool2d)
@@ -956,29 +957,27 @@ namespace
         for (const auto& info : smInfo)
         {
           smCoords.emplace_back(info.coord);
-        }
+        } 
         auto centroid = compgeom::triCentroid(triInfo.coords[0], triInfo.coords[1], triInfo.coords[2]);
         std::vector<std::size_t> ccwIds_;
         compgeom::counterClockWise(smCoords, centroid, ccwIds_);
         std::vector<std::vector<vtkIdType>> cells;
         cells.emplace_back(std::vector<vtkIdType>(ccwIds_.begin(), ccwIds_.end()));
 
-#if 0
-        vtkSmartPointer<vtkDataSet> subMesh = CreateMesh<PointsT, ScalarsT>(smInfo, cells);
-        auto subMeshTris = vtkSmartPointer<vtkPolyData>::New();
-        auto triangulate = vtkSmartPointer<vtkTriangleFilter>::New();
-        triangulate->SetInputData(subMesh);
+        // now triangulate (ear-cut) and apply loop edge constraints
+        auto triangulate = vtkTriangleFilter::New();
+        triangulate->SetInputData(CreateMesh<PointsT, ScalarsT>(smInfo, cells));
         triangulate->Update();
-        subMeshTris->ShallowCopy(triangulate->GetOutput());
-        subMeshTris->BuildLinks();
+        auto subMesh = vtkSmartPointer<vtkPolyData>::Take(triangulate->GetOutput());
+        subMesh->BuildLinks();
         for (const auto& constraint : constraints)
         {
           unsigned short niters = 0;
-          while (!subMeshTris->IsEdge(constraint.first, constraint.second))
+          while (!subMesh->IsEdge(constraint.first, constraint.second))
           {
             using dispatcher = vtkArrayDispatch::DispatchByValueType<vtkArrayDispatch::Reals>;
-            auto constraintWorker = ApplyConstraintImpl(subMeshTris, constraint.first, constraint.second);
-            vtkDataArray* points = subMeshTris->GetPoints()->GetData();
+            auto constraintWorker = ApplyConstraintImpl(subMesh, constraint.first, constraint.second);
+            vtkDataArray* points = subMesh->GetPoints()->GetData();
             if (!dispatcher::Execute(points, constraintWorker))
             {
               constraintWorker(points);
@@ -990,10 +989,12 @@ namespace
             }
           }
         }
-#endif
-        const std::size_t oldSz = trisInfo.size();
-        //extractTris(subMeshTris, tris, smInfo, meshInfo, trisInfo);
-        const std::size_t newSz = trisInfo.size();
+
+        const auto& oldSz = trisInfo.size();
+        extractTris(subMesh, tris, smInfo, meshInfo, trisInfo);
+        const auto& newSz = trisInfo.size();
+
+        triangulate->Delete();
 
         for (std::size_t iInfo = oldSz; iInfo < newSz; ++iInfo)
         {
