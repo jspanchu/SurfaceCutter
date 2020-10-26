@@ -80,7 +80,7 @@ int test_case(const unsigned short& caseIdx, vtkSmartPointer<SurfaceCutter> surf
   caseReader->SetFileName(caseFname.str().c_str());
 
   surfCutter->SetInputConnection(1, caseReader->GetOutputPort());
-  surfCutter->SetInsideOut(true);
+  surfCutter->SetInsideOut(insideOut);
   surfCutter->Update();
 
   auto surfCut = vtkSmartPointer<vtkPolyData>::New();
@@ -142,9 +142,9 @@ int main()
   surfCutter->SetInputConnection(0, reader->GetOutputPort());
   for (unsigned short iCase = 1; iCase < 6; ++iCase)
   {
-    if (!test_case(iCase, surfCutter, true))
+    if (test_case(iCase, surfCutter, true))
       return EXIT_FAILURE;
-    if (!test_case(iCase, surfCutter, false))
+    if (test_case(iCase, surfCutter, false))
       return EXIT_FAILURE;
   }
   return EXIT_SUCCESS;

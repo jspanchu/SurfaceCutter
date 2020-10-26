@@ -13,6 +13,7 @@ if (BUILD_EXAMPLE)
       vtkCommonTransforms
       vtkFiltersCore
       vtkFiltersExtraction
+      vtkFiltersFlowPaths 
       vtkFiltersGeneral
       vtkFiltersModeling
       vtkIOXML

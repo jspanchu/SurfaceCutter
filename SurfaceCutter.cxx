@@ -67,7 +67,9 @@ int SurfaceCutter::RequestData(vtkInformation* request, vtkInformationVector** i
   }
   output->DeepCopy(input);
   auto loops = vtkSmartPointer<vtkPolyData>::New();
-  loops->DeepCopy(loopsIn);
+  loops->SetPoints(loopsIn->GetPoints());
+  loops->SetPolys(loopsIn->GetPolys());
+  loops->GetCellData()->PassData(loopsIn->GetCellData());
 
   vtkDataArray* insideOuts;
   if ((insideOuts = loops->GetCellData()->GetArray("InsideOuts")) == nullptr)

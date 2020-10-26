@@ -10,7 +10,9 @@
 #include <vtkDataSet.h>
 #include <vtkDelaunay2D.h>
 #include <vtkExtractEdges.h>
+#include <vtkModifiedBSPTree.h>
 #include <vtkPolyData.h>
+#include <vtkPolygon.h>
 #include <vtkPointData.h>
 #include <vtkSmartPointer.h>
 #include <vtkTriangle.h>
@@ -24,7 +26,9 @@
 #include <map>
 #include <numeric>
 #include <set>
+#include <unordered_set>
 #include <utility>
+
 
 namespace compgeom
 {
@@ -807,7 +811,7 @@ namespace
       ///> A The sub-mesh after interpolation might consist of 
       /// 1. the actual triangle.
       /// 2. all polyPoints that are enclosed by that triangle.
-      const std::size_t numTris1 = trisInfo.size();
+      const std::size_t& numTris1 = trisInfo.size();
       for (std::size_t iTri = 0; iTri < numTris1; ++iTri)
       {
         TMeta& triInfo = trisInfo[iTri];
@@ -865,7 +869,7 @@ namespace
       /// 2. Triangulate the actual triangle + intersection points.
       /// 3. Identify pairs of intersections as constraints.
       /// 4. Apply constraints on the sub mesh.
-      const std::size_t numTris2 = trisInfo.size();
+      const std::size_t& numTris2 = trisInfo.size();
       for (std::size_t iTri = 0; iTri < numTris2; ++iTri)
       {
         TMeta& triInfo = trisInfo[iTri];
@@ -965,10 +969,35 @@ namespace
         cells.emplace_back(std::vector<vtkIdType>(ccwIds_.begin(), ccwIds_.end()));
 
         // now triangulate (ear-cut) and apply loop edge constraints
-        auto triangulate = vtkTriangleFilter::New();
-        triangulate->SetInputData(CreateMesh<PointsT, ScalarsT>(smInfo, cells));
-        triangulate->Update();
-        auto subMesh = vtkSmartPointer<vtkPolyData>::Take(triangulate->GetOutput());
+        vtkSmartPointer<vtkPolyData> subMesh = vtkPolyData::SafeDownCast(CreateMesh<PointsT, ScalarsT>(smInfo, cells));
+        auto newPolys = vtkSmartPointer<vtkCellArray>::New();
+        auto poly = vtkPolygon::New();
+        auto ptIds = vtkIdList::New();
+        // initialize polygon
+        const auto& pts = cells[0];
+        const auto& numIds = pts.size();
+        poly->PointIds->SetNumberOfIds(numIds);
+        poly->Points->SetNumberOfPoints(numIds);
+        for (int i = 0; i < numIds; i++)
+        {
+          poly->PointIds->SetId(i, pts[i]);
+          poly->Points->SetPoint(i, subMesh->GetPoint(pts[i]));
+        }
+        poly->Triangulate(ptIds);
+        const auto& numPts = ptIds->GetNumberOfIds();
+        const auto numSimplices = numPts / 3;
+        std::array<vtkIdType, 3> triPts;
+        for (int i = 0; i < numSimplices; i++)
+        {
+          for (int j = 0; j < 3; j++)
+          {
+            triPts[j] = poly->PointIds->GetId(ptIds->GetId(3 * i + j));
+          }
+          newPolys->InsertNextCell(3, triPts.data());
+        } // for each simplex
+        poly->Delete();
+        ptIds->Delete();
+        subMesh->SetPolys(newPolys);
         subMesh->BuildLinks();
         for (const auto& constraint : constraints)
         {
@@ -993,8 +1022,6 @@ namespace
         const auto& oldSz = trisInfo.size();
         extractTris(subMesh, tris, smInfo, meshInfo, trisInfo);
         const auto& newSz = trisInfo.size();
-
-        triangulate->Delete();
 
         for (std::size_t iInfo = oldSz; iInfo < newSz; ++iInfo)
         {
