@@ -159,4 +159,4 @@ Here I could've used [vtkDelaunay2D](https://vtk.org/doc/nightly/html/classvtkDe
 
 * If a triangle lies inside or outside a polygon (depends on the option), set `discard=true`
 
-* At the end, the algorithm collects all triangles that were not *discard* and creates a new mesh.
+* At the end, the algorithm collects all triangles that were not *discarded* and creates a new mesh.
