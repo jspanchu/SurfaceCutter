@@ -65,7 +65,7 @@ int SurfaceCutter::RequestData(vtkInformation* request, vtkInformationVector** i
   {
     return 1;
   }
-  output->DeepCopy(input);
+
   auto loops = vtkSmartPointer<vtkPolyData>::New();
   loops->SetPoints(loopsIn->GetPoints());
   loops->SetPolys(loopsIn->GetPolys());
@@ -92,39 +92,43 @@ int SurfaceCutter::RequestData(vtkInformation* request, vtkInformationVector** i
     vtkDebugMacro(<< "Input surface is missing scalars. Will add dummy scalars");
     auto _dummy = vtkSmartPointer<vtkAOSDataArrayTemplate<float>>::New();
     _dummy->SetNumberOfComponents(1);
-    _dummy->SetNumberOfTuples(output->GetNumberOfPoints());
+    _dummy->SetNumberOfTuples(input->GetNumberOfPoints());
     _dummy->SetName("DummyScalars");
     _dummy->FillValue(0.0);
-    output->GetPointData()->AddArray(_dummy);
+    input->GetPointData()->AddArray(_dummy);
     scalars = _dummy;
     dummyAdded = true;
   }
 
   using dispatcher = vtkArrayDispatch::Dispatch3ByValueType<vtkArrayDispatch::Reals, vtkArrayDispatch::Reals, vtkArrayDispatch::Reals>;
-  if (output->IsA("vtkPolyData"))
+  if (input->IsA("vtkPolyData"))
   {
-    vtkSmartPointer<vtkPolyData> meshPd = vtkPolyData::SafeDownCast(output);
-    vtkDataArray* points = meshPd->GetPoints()->GetData();
+    vtkSmartPointer<vtkPolyData> inMesh = vtkPolyData::SafeDownCast(input);
+    auto outMesh = vtkSmartPointer<vtkPolyData>::New();
 
-    auto worker = SurfCutterImpl(meshPd, loops, scalars->GetName(), this->InsideOut, this->ComputeBoolean2D);
+    vtkDataArray* points = inMesh->GetPoints()->GetData();
+    auto worker = SurfCutterImpl(inMesh, outMesh, loops, scalars->GetName(), this->InsideOut, this->ComputeBoolean2D);
     if (!dispatcher::Execute(points, scalars, loopsPts, worker))
     {
       worker(points, scalars, loopsPts);
     }
+    output->ShallowCopy(worker.outMesh);
   }  
-  else if (output->IsA("vtkUnstructuredGrid"))
+  else if (input->IsA("vtkUnstructuredGrid"))
   {
-    vtkSmartPointer<vtkUnstructuredGrid> meshUgrid = vtkUnstructuredGrid::SafeDownCast(output);
-    vtkDataArray* points = meshUgrid->GetPoints()->GetData();
-    auto worker = SurfCutterImpl(meshUgrid, loops, scalars->GetName(), this->InsideOut, this->ComputeBoolean2D);
+    vtkSmartPointer<vtkUnstructuredGrid> inMesh = vtkUnstructuredGrid::SafeDownCast(input);
+    auto outMesh = vtkSmartPointer<vtkUnstructuredGrid>::New();
+    vtkDataArray* points = inMesh->GetPoints()->GetData();
+    auto worker = SurfCutterImpl(inMesh, outMesh, loops, scalars->GetName(), this->InsideOut, this->ComputeBoolean2D);
     if (!dispatcher::Execute(points, scalars, loopsPts, worker))
     {
       worker(points, scalars, loopsPts);
     }
+    output->ShallowCopy(worker.outMesh);
   }
 
   if (dummyAdded)
-    output->GetPointData()->RemoveArray("DummyScalars");
+    input->GetPointData()->RemoveArray("DummyScalars");
 
   if (!this->TagAcquiredPoints)
     output->GetPointData()->RemoveArray("Acquired");

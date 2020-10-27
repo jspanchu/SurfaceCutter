@@ -20,7 +20,6 @@
 #include <vtkUnstructuredGrid.h>
 #include <vtkXMLPolyDataReader.h>
 #include <vtkXMLUnstructuredGridReader.h>
-
 #include <vtkCookieCutter.h>
 #include <SurfaceCutter.h>
 
@@ -106,8 +105,8 @@ static void KeypressCallbackFunction(vtkObject* caller, long unsigned int eventI
 int main(int argc, char** argv) {
 
   bool useCookieCutter(false), movable(true), useClipDataSet(false), insideOut(true);
-  std::string meshFile = "data/BigSurface.vtp";
-  std::string loopsFile = "data/TestPolys2.vtp";
+  std::string meshFile = "data/Triangle.vtp";
+  std::string loopsFile = "data/Case5.vtp";
 
   int arg = 0;
   do
@@ -197,7 +196,7 @@ int main(int argc, char** argv) {
     auto surfCutter_ = vtkSmartPointer<SurfaceCutter>::New();
     surfCutter_->SetInputConnection(0, meshTransformFilter->GetOutputPort());
     surfCutter_->SetInputConnection(1, loopsReader->GetOutputPort());
-    surfCutter_->SetInsideOut(insideOut);
+    surfCutter_->SetInsideOut(false);
     surfCutter = vtkAlgorithm::SafeDownCast(surfCutter_);
   }
   else if (useCookieCutter)
