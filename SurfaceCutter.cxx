@@ -107,7 +107,7 @@ int SurfaceCutter::RequestData(vtkInformation* request, vtkInformationVector** i
     auto outMesh = vtkSmartPointer<vtkPolyData>::New();
 
     vtkDataArray* points = inMesh->GetPoints()->GetData();
-    auto worker = SurfCutterImpl(inMesh, outMesh, loops, scalars->GetName(), this->InsideOut, this->ComputeBoolean2D);
+    auto worker = SurfCutterImpl(inMesh, outMesh, loops, this->ComputeBoolean2D);
     if (!dispatcher::Execute(points, scalars, loopsPts, worker))
     {
       worker(points, scalars, loopsPts);
@@ -119,7 +119,7 @@ int SurfaceCutter::RequestData(vtkInformation* request, vtkInformationVector** i
     vtkSmartPointer<vtkUnstructuredGrid> inMesh = vtkUnstructuredGrid::SafeDownCast(input);
     auto outMesh = vtkSmartPointer<vtkUnstructuredGrid>::New();
     vtkDataArray* points = inMesh->GetPoints()->GetData();
-    auto worker = SurfCutterImpl(inMesh, outMesh, loops, scalars->GetName(), this->InsideOut, this->ComputeBoolean2D);
+    auto worker = SurfCutterImpl(inMesh, outMesh, loops, this->ComputeBoolean2D);
     if (!dispatcher::Execute(points, scalars, loopsPts, worker))
     {
       worker(points, scalars, loopsPts);

@@ -544,15 +544,16 @@ namespace
 
   struct SurfCutterImpl
   {
-    SurfCutterImpl(vtkSmartPointer<vtkDataSet> inMesh_, vtkSmartPointer<vtkDataSet> outMesh_, vtkSmartPointer<vtkPolyData> loops_, const std::string& scalarsName_, const bool& insideOut_, const bool& computeBool2d_)
-      : inMesh(inMesh_), outMesh(outMesh_), loops(loops_), scalarsName(scalarsName_), insideOut(insideOut_), computeBool2d(computeBool2d_)
-    {}
+    SurfCutterImpl(vtkSmartPointer<vtkDataSet> inMesh_, vtkSmartPointer<vtkDataSet> outMesh_, vtkSmartPointer<vtkPolyData> loops_, const bool& computeBool2d_)
+      : inMesh(inMesh_), outMesh(outMesh_), loops(loops_), computeBool2d(computeBool2d_)
+    {
+      scalarsName = "Scalars";
+    }
 
     vtkSmartPointer<vtkDataSet> inMesh;
     vtkSmartPointer<vtkDataSet> outMesh;
     vtkSmartPointer<vtkPolyData> loops;
     std::string scalarsName;
-    bool insideOut;
     bool computeBool2d;
 
     template<typename PointsT, typename ScalarsT>
@@ -622,7 +623,7 @@ namespace
     }
 
     template<typename PointsT, typename ScalarsT>
-    void CreateTriMesh(const std::vector<MeshPointMeta<PointsT, ScalarsT>>& meshInfos, const std::vector<TriMeta<PointsT, ScalarsT>>& tris)
+    vtkSmartPointer<vtkDataSet> CreateTriMesh(const std::vector<MeshPointMeta<PointsT, ScalarsT>>& meshInfos, const std::vector<TriMeta<PointsT, ScalarsT>>& tris)
     {
       auto mesh = vtkSmartPointer<vtkPolyData>::New();
 
@@ -672,7 +673,9 @@ namespace
       cleanUp->SetInputData(mesh);
       cleanUp->PointMergingOff();
       cleanUp->Update();
-      outMesh->ShallowCopy(cleanUp->GetOutput());
+      mesh->ShallowCopy(cleanUp->GetOutput());
+
+      return mesh;
     }
 
     template<typename PointsArrT1, typename ScalarsArrT, typename PointsArrT2>
@@ -699,6 +702,8 @@ namespace
       auto insideOuts = vtkAOSDataArrayTemplate<int>::FastDownCast(loops->GetCellData()->GetArray("InsideOuts"));
       if (!insideOuts)
         return;
+
+      scalarsName = scalars->GetName();
 
       auto acquisition = vtkSmartPointer<vtkAOSDataArrayTemplate<int>>::New();
       acquisition->SetNumberOfComponents(1);
@@ -1039,12 +1044,16 @@ namespace
       }
 
       // collect all triangles and finish
-      CreateTriMesh(meshInfo, trisInfo);
+      vtkSmartPointer<vtkPolyData> meshPd = vtkPolyData::SafeDownCast(CreateTriMesh(meshInfo, trisInfo));
+      vtkSmartPointer<vtkCellArray> cells = meshPd->GetPolys();
       if (outMesh->IsA("vtkUnstructuredGrid"))
       {
-        vtkSmartPointer<vtkCellArray> cells = vtkPolyData::SafeDownCast(outMesh)->GetPolys();
         auto meshUgrid = vtkUnstructuredGrid::SafeDownCast(outMesh);
         meshUgrid->SetCells(VTK_TRIANGLE, cells);
+      }
+      else if (outMesh->IsA("vtkPolyData"))
+      {
+        outMesh->ShallowCopy(meshPd);
       }
     }
   };
