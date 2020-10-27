@@ -10,26 +10,20 @@
 #include <vtkDataArrayAccessor.h>
 #include <vtkDataSet.h>
 #include <vtkDelaunay2D.h>
-#include <vtkExtractEdges.h>
-#include <vtkModifiedBSPTree.h>
 #include <vtkPolyData.h>
 #include <vtkPolygon.h>
 #include <vtkPointData.h>
 #include <vtkSmartPointer.h>
 #include <vtkTriangle.h>
-#include <vtkTriangleFilter.h>
 #include <vtkUnstructuredGrid.h>
-#include <vtkAbstractCellLocator.h>
 
 #include <algorithm>
 #include <array>
 #include <vector>
+#include <limits>
 #include <map>
 #include <numeric>
-#include <set>
-#include <unordered_set>
 #include <utility>
-
 
 namespace compgeom
 {
@@ -1044,6 +1038,7 @@ namespace
         }
       }
 
+      // collect all triangles and finish
       CreateTriMesh(meshInfo, trisInfo);
       if (outMesh->IsA("vtkUnstructuredGrid"))
       {

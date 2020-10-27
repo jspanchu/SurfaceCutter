@@ -1,14 +1,11 @@
 # SurfaceCutter
-Cut portions of a triangulated surface with 2D polygons with control over what portion is to be retained. (Inside/Outside)
+Cut portions of a triangulated surface with 2D polygons. Offers control over what portion is to be retained (Inside/Outside).
 It was developed to be as fast as possible and retain arithmetic precision in case of mixed precision datasets.
 
-Within the algorithm there are two entities, the *surface* that is to be cut and the *polygons* that cut the surface.
-They are conveniently called *mesh* and *loops* throughout the implementation.
-
-The algorithm is inherently limited to *loops* in the 2D plane (i.e, with normal along *+/-Z*).
-
-This could serve as an efficient, precise alternative to VTK's clipping filters in 2D.
+This could serve as an efficient, almost always precise alternative to VTK's clipping filters in 2D.
 The implementation **does not** support cutting volumes. For reference, take a look at the benchmarks and results..
+
+The loop polygons are assumed to lie in x-y plane.
 
 ### Usage
 ```c++
@@ -129,19 +126,37 @@ Realtime computations can be thrown out the window with [vtkCookieCutter](https:
 
 ## Algorithm deets:
 
-* If a *loop* is oriented other than *+/-Z*, then the *loop's* points are projected into a triangle from the surface.
+Within the algorithm there are two entities, the *surface* that is to be cut and the *polygons* that cut the surface.
+They are conveniently called *mesh* and *loops* throughout the implementation.
+
+The algorithm is inherently limited to *loops* in the 2D plane (i.e, with normal along *+/-Z*).
+
+* Work with a container of *TriMeta* for performance reasons. (Better than jumping across Points/Scalars array).
+```
+TriMeta
+{
+  bbox;
+  coord {{x0, y0, z0}, {...}, {...}};
+  discard;
+  scalar;
+  verts {v1, v2, v3};
+}
+```
+* Use a container of *TriMeta* as cache and an active workspace for existing and new triangles.
+
+* The *loop's* points are projected into a triangle from the surface.
 (*triangle that contains the point in 2D*). 
 
-* Subsequently, a *subMesh* is created with the projected point and  the triangle which we projected into. The original triangle is discarded.
+* Construct a *subMesh* with the projected point and the triangle which we projected into. This triangle is replaced with the *subMesh* inplace.
 
-* The *edges* of the *loops* are then *inserted* into triangles from both the *subMesh* and the actual *mesh*. Here,
+* Throw the *edges* of the *loops* onto triangles. Here,
 care is taken to handle precision loss when intersecting edges. Also, the *loop*'s *constraints* are identified in this step.
-I could've used VTK's intersect routines, but they're not robust, debugging it was a bit troublesome.
+I could've used VTK's intersect routines, but they're not robust (work only with double precision), debugging it was a bit troublesome.
 
-* Now, the intersection points are sorted ccw around the centroid and triangulated with ear cut method.
-Following that, I flip the edges to ensure the *loop's* constraints make it to the final result. 
+* Now, the intersection points are sorted ccw around the centroid and triangulated with an ear-cut method.
+Following that, Flip triangulation's edges to ensure the *loop's* constraints make it to the final result. 
 Here I could've used [vtkDelaunay2D](https://vtk.org/doc/nightly/html/classvtkDelaunay2D.html), but it sometimes got stuck forever in recursive 'CheckEdge'.
 
-* If a triangle lies inside or outside a polygon (depends on the option), it's marked to be discarded.
+* If a triangle lies inside or outside a polygon (depends on the option), set `discard=true`
 
-* At the end, the algorithm collects all triangles that were not marked as *discard* and creates a new mesh.
+* At the end, the algorithm collects all triangles that were not *discard* and creates a new mesh.
