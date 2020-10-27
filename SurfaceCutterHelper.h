@@ -16,6 +16,7 @@
 #include <vtkSmartPointer.h>
 #include <vtkTriangle.h>
 #include <vtkUnstructuredGrid.h>
+#include <vtkXMLPolyDataWriter.h>
 
 #include <algorithm>
 #include <array>
@@ -326,7 +327,7 @@ namespace
   struct TriMeta {
     TriMeta()
     {
-      discard = false; 
+      discard = false;
     }
     TriMeta(const std::array<std::array<PointsT, 3>, 3>& coords_, const std::array<ScalarsT, 3>& scalars_, const std::array<int, 3>& isAcquired_, const std::array<vtkIdType, 3>& verts_)
       : coords(coords_), scalars(scalars_), isAcquired(isAcquired_), verts(verts_)
@@ -544,14 +545,14 @@ namespace
 
   struct SurfCutterImpl
   {
-    SurfCutterImpl(vtkSmartPointer<vtkDataSet> inMesh_, vtkSmartPointer<vtkDataSet> outMesh_, vtkSmartPointer<vtkPolyData> loops_, const bool& computeBool2d_)
-      : inMesh(inMesh_), outMesh(outMesh_), loops(loops_), computeBool2d(computeBool2d_)
+    SurfCutterImpl(vtkSmartPointer<vtkDataSet> inMesh_, vtkSmartPointer<vtkPolyData> loops_, const bool& computeBool2d_)
+      : inMesh(inMesh_), loops(loops_), computeBool2d(computeBool2d_)
     {
       scalarsName = "Scalars";
     }
 
     vtkSmartPointer<vtkDataSet> inMesh;
-    vtkSmartPointer<vtkDataSet> outMesh;
+    vtkSmartPointer<vtkPolyData> outMesh;
     vtkSmartPointer<vtkPolyData> loops;
     std::string scalarsName;
     bool computeBool2d;
@@ -623,13 +624,11 @@ namespace
     }
 
     template<typename PointsT, typename ScalarsT>
-    vtkSmartPointer<vtkDataSet> CreateTriMesh(const std::vector<MeshPointMeta<PointsT, ScalarsT>>& meshInfos, const std::vector<TriMeta<PointsT, ScalarsT>>& tris)
+    void CreateTriMesh(const std::vector<MeshPointMeta<PointsT, ScalarsT>>& meshInfos, const std::vector<TriMeta<PointsT, ScalarsT>>& tris)
     {
-      auto mesh = vtkSmartPointer<vtkPolyData>::New();
+      outMesh = vtkSmartPointer<vtkPolyData>::New();
 
       vtkIdType numPoints = meshInfos.size();
-      if (!numPoints)
-        outMesh->ShallowCopy(mesh);
 
       auto coords = vtkSmartPointer<vtkAOSDataArrayTemplate<PointsT>>::New();
       auto scalars = vtkSmartPointer<vtkAOSDataArrayTemplate<ScalarsT>>::New();
@@ -640,8 +639,8 @@ namespace
       acquisition->SetNumberOfComponents(1);
 
       coords->SetNumberOfTuples(numPoints);
-      scalars->SetNumberOfTuples(numPoints);
-      acquisition->SetNumberOfTuples(numPoints);
+      scalars->SetNumberOfValues(numPoints);
+      acquisition->SetNumberOfValues(numPoints);
 
       scalars->SetName(scalarsName.c_str());
       acquisition->SetName("Acquired");
@@ -657,25 +656,22 @@ namespace
 
       auto points = vtkSmartPointer<vtkPoints>::New();
       points->SetData(coords);
-      mesh->SetPoints(points);
-      mesh->GetPointData()->AddArray(scalars);
-      mesh->GetPointData()->AddArray(acquisition);
-      mesh->Allocate(tris.size());
+      outMesh->SetPoints(points);
+      outMesh->GetPointData()->SetScalars(scalars);
+      outMesh->GetPointData()->AddArray(acquisition);
+      outMesh->Allocate(tris.size());
 
       for (const auto& tri : tris)
       {
         if (tri.discard)
           continue;
-
-        mesh->InsertNextCell(VTK_TRIANGLE, 3, tri.verts.data());
+        outMesh->InsertNextCell(VTK_TRIANGLE, 3, tri.verts.data());
       }
       auto cleanUp = vtkSmartPointer<vtkCleanPolyData>::New();
-      cleanUp->SetInputData(mesh);
-      cleanUp->PointMergingOff();
+      cleanUp->SetInputData(outMesh);
+      cleanUp->PointMergingOn();
       cleanUp->Update();
-      mesh->ShallowCopy(cleanUp->GetOutput());
-
-      return mesh;
+      outMesh->ShallowCopy(cleanUp->GetOutput());
     }
 
     template<typename PointsArrT1, typename ScalarsArrT, typename PointsArrT2>
@@ -768,7 +764,7 @@ namespace
           _xs[idx] = loopsInfo.coords[p0][0];
           _ys[idx] = loopsInfo.coords[p0][1];
         }
-        
+
         // pertaining to loop polygon
         double xmin = *std::min_element(_xs.begin(), _xs.end());
         double xmax = *std::max_element(_xs.begin(), _xs.end());
@@ -806,7 +802,7 @@ namespace
       trisInfo.reserve(numCells);
       extractTriInfo(inMesh, triPtIds, meshInfo, trisInfo);
       // 3 new triangles per loop's point, 3 new intersection points per triangle, 3 new intersection points for edge.
-      meshInfo.reserve(meshInfo.size() + numPoints2 * 3 * 3 * 3); 
+      meshInfo.reserve(meshInfo.size() + numPoints2 * 3 * 3 * 3);
       // same as meshInfo, further 3 sub triangles per each new triangle.
       trisInfo.reserve(trisInfo.size() + numPoints2 * 3 * 3 * 3 * 3);
 
@@ -973,7 +969,7 @@ namespace
         for (const auto& smId : smIds)
         {
           smCoords.emplace_back(meshInfo[smId].coord);
-        } 
+        }
         auto centroid = compgeom::triCentroid(triInfo.coords[0], triInfo.coords[1], triInfo.coords[2]);
         std::vector<std::size_t> ccwIds_;
         compgeom::counterClockWise(smCoords, centroid, ccwIds_);
@@ -1044,17 +1040,7 @@ namespace
       }
 
       // collect all triangles and finish
-      vtkSmartPointer<vtkPolyData> meshPd = vtkPolyData::SafeDownCast(CreateTriMesh(meshInfo, trisInfo));
-      vtkSmartPointer<vtkCellArray> cells = meshPd->GetPolys();
-      if (outMesh->IsA("vtkUnstructuredGrid"))
-      {
-        auto meshUgrid = vtkUnstructuredGrid::SafeDownCast(outMesh);
-        meshUgrid->SetCells(VTK_TRIANGLE, cells);
-      }
-      else if (outMesh->IsA("vtkPolyData"))
-      {
-        outMesh->ShallowCopy(meshPd);
-      }
+      CreateTriMesh(meshInfo, trisInfo);
     }
   };
 }
