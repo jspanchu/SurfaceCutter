@@ -19,7 +19,7 @@ vtkStandardNewMacro(SurfaceCutter);
 SurfaceCutter::SurfaceCutter()
 {
   this->ComputeBoolean2D = true;
-  this->InsideOut = true; // remove portion outside polygons.
+  this->InsideOut = true; // default: remove portions outside loop polygons.
   this->TagAcquiredPoints = true;
 
   this->SetNumberOfInputPorts(2);
@@ -128,7 +128,10 @@ int SurfaceCutter::RequestData(vtkInformation* request, vtkInformationVector** i
   }
 
   if (dummyAdded)
+  {
     input->GetPointData()->RemoveArray("DummyScalars");
+    output->GetPointData()->RemoveArray("DummyScalars");
+  }
 
   if (!this->TagAcquiredPoints)
     output->GetPointData()->RemoveArray("Acquired");

@@ -12,7 +12,7 @@ public:
   vtkSetMacro(ComputeBoolean2D, bool);
   vtkGetMacro(ComputeBoolean2D, bool);
   
-  vtkBooleanMacro(InsideOut, bool);
+  vtkBooleanMacro(InsideOut, bool); // default: remove portions outside loop polygons.
   vtkSetMacro(InsideOut, bool);
   vtkGetMacro(InsideOut, bool);
 
