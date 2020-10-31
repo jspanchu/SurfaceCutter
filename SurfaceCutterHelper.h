@@ -547,8 +547,12 @@ namespace
 
   struct SurfCutterImpl
   {
-    SurfCutterImpl(vtkSmartPointer<vtkDataSet> inMesh_, vtkSmartPointer<vtkPolyData> loops_, const bool& computeBool2d_)
-      : inMesh(inMesh_), loops(loops_), computeBool2d(computeBool2d_)
+  private:
+    std::vector<std::array<vtkIdType, 2>> globalConstraints;
+  
+  public:
+    SurfCutterImpl(vtkSmartPointer<vtkDataSet> inMesh_, vtkSmartPointer<vtkPolyData> loops_, const bool& computeBool2d_, const bool& computeProjLoop_)
+      : inMesh(inMesh_), loops(loops_), computeBool2d(computeBool2d_), computeProjLoop(computeProjLoop_)
     {
       scalarsName = "Scalars";
     }
@@ -556,8 +560,9 @@ namespace
     vtkSmartPointer<vtkDataSet> inMesh;
     vtkSmartPointer<vtkPolyData> outMesh;
     vtkSmartPointer<vtkPolyData> loops;
+    vtkSmartPointer<vtkPolyData> projectedLoops;
     std::string scalarsName;
-    bool computeBool2d;
+    bool computeBool2d, computeProjLoop;
 
     template<typename PointsT, typename ScalarsT>
     vtkSmartPointer<vtkDataSet> CreateMesh(const std::vector<MeshPointMeta<PointsT, ScalarsT>>& meshInfo, const std::vector<std::size_t>& subMeshIds, const std::vector<std::vector<vtkIdType>>& cells)
@@ -686,6 +691,61 @@ namespace
       cleanUp->PointMergingOn();
       cleanUp->Update();
       outMesh->ShallowCopy(cleanUp->GetOutput());
+    }
+
+    template<typename PointsT, typename ScalarsT>
+    void CreateProjectedLoop(const std::vector<MeshPointMeta<PointsT, ScalarsT>>& meshInfos)
+    {
+      projectedLoops = vtkSmartPointer<vtkPolyData>::New();
+
+      vtkIdType numPoints = meshInfos.size();
+
+      auto coords = vtkSmartPointer<vtkAOSDataArrayTemplate<PointsT>>::New();
+      auto scalars = vtkSmartPointer<vtkAOSDataArrayTemplate<ScalarsT>>::New();
+      auto acquisitions = vtkSmartPointer<vtkAOSDataArrayTemplate<int>>::New();
+      auto intesections = vtkSmartPointer<vtkAOSDataArrayTemplate<int>>::New();
+
+      coords->SetNumberOfComponents(3);
+      scalars->SetNumberOfComponents(1);
+      acquisitions->SetNumberOfComponents(1);
+      intesections->SetNumberOfComponents(1);
+
+      coords->SetNumberOfTuples(numPoints);
+      scalars->SetNumberOfTuples(numPoints);
+      acquisitions->SetNumberOfTuples(numPoints);
+      intesections->SetNumberOfTuples(numPoints);
+
+      scalars->SetName(scalarsName.c_str());
+      acquisitions->SetName("Acquired");
+      intesections->SetName("Intersected");
+
+      for (vtkIdType tupleIdx = 0; tupleIdx < numPoints; ++tupleIdx)
+      {
+        for (int iDim = 0; iDim < 3; ++iDim)
+          coords->SetTypedComponent(tupleIdx, iDim, meshInfos[tupleIdx].coord[iDim]);
+
+        scalars->SetValue(tupleIdx, meshInfos[tupleIdx].scalar);
+        acquisitions->SetValue(tupleIdx, meshInfos[tupleIdx].isAcquired);
+        intesections->SetValue(tupleIdx, meshInfos[tupleIdx].isIntersect);
+      }
+
+      auto points = vtkSmartPointer<vtkPoints>::New();
+      points->SetData(coords);
+      projectedLoops->SetPoints(points);
+      projectedLoops->GetPointData()->SetScalars(scalars);
+      projectedLoops->GetPointData()->AddArray(acquisitions);
+      projectedLoops->GetPointData()->AddArray(intesections);
+      projectedLoops->Allocate(globalConstraints.size());
+
+      for (const auto& edge : globalConstraints)
+      {
+        projectedLoops->InsertNextCell(VTK_LINE, 2, edge.data());
+      }
+      auto cleanUp = vtkSmartPointer<vtkCleanPolyData>::New();
+      cleanUp->SetInputData(projectedLoops);
+      cleanUp->PointMergingOn();
+      cleanUp->Update();
+      projectedLoops->ShallowCopy(cleanUp->GetOutput());
     }
 
     template<typename PointsArrT1, typename ScalarsArrT, typename PointsArrT2>
@@ -839,7 +899,7 @@ namespace
 
       ///> A The sub-mesh after interpolation might consist of 
       /// 1. the actual triangle.
-      /// 2. all polyPoints that are enclosed by that triangle.
+      /// 2. all loops' points that are enclosed by that triangle.
       const std::size_t& nTris1 = trisInfo.size();
       std::vector<std::size_t> smIds;
       smIds.reserve(numPoints2);
@@ -1050,6 +1110,8 @@ namespace
               break;
             }
           }
+          if (computeProjLoop)
+            globalConstraints.push_back(std::array<vtkIdType, 2>({ (vtkIdType)smIds[constraint.first], (vtkIdType)smIds[constraint.second] }));
         }
 
         const auto& oldSz = trisInfo.size();
@@ -1065,6 +1127,8 @@ namespace
 
       // collect all triangles and finish
       CreateTriMesh(meshInfo, trisInfo);
+      if (computeProjLoop)
+        CreateProjectedLoop(meshInfo);
     }
   };
 }

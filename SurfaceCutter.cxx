@@ -4,6 +4,7 @@
 #include <vtkArrayDispatch.h>
 #include <vtkCellData.h>
 #include <vtkDataSet.h>
+#include <vtkXMLPolyDataWriter.h>
 #include <vtkInformation.h>
 #include <vtkInformationVector.h>
 #include <vtkObjectFactory.h>
@@ -19,11 +20,13 @@ vtkStandardNewMacro(SurfaceCutter);
 SurfaceCutter::SurfaceCutter()
 {
   this->ComputeBoolean2D = true;
+  this->ComputeProjectedLoop = true;
   this->InsideOut = true; // default: remove portions outside loop polygons.
   this->TagAcquiredPoints = true;
+  this->TagIntersections = true;
 
   this->SetNumberOfInputPorts(2);
-  this->SetNumberOfOutputPorts(1);
+  this->SetNumberOfOutputPorts(2);
 
   this->SetInputArrayToProcess(0, 0, 0, vtkDataObject::FIELD_ASSOCIATION_POINTS, vtkDataSetAttributes::AttributeTypes::SCALARS);
 
@@ -105,7 +108,7 @@ int SurfaceCutter::RequestData(vtkInformation* request, vtkInformationVector** i
   {
     vtkSmartPointer<vtkPolyData> inMesh = vtkPolyData::SafeDownCast(input);
     vtkDataArray* points = inMesh->GetPoints()->GetData();
-    auto worker = SurfCutterImpl(inMesh, loops, this->ComputeBoolean2D);
+    auto worker = SurfCutterImpl(inMesh, loops, this->ComputeBoolean2D, this->ComputeProjectedLoop);
     if (!dispatcher::Execute(points, scalars, loopsPts, worker))
     {
       worker(points, scalars, loopsPts);
@@ -116,7 +119,7 @@ int SurfaceCutter::RequestData(vtkInformation* request, vtkInformationVector** i
   {
     vtkSmartPointer<vtkUnstructuredGrid> inMesh = vtkUnstructuredGrid::SafeDownCast(input);
     vtkDataArray* points = inMesh->GetPoints()->GetData();
-    auto worker = SurfCutterImpl(inMesh, loops, this->ComputeBoolean2D);
+    auto worker = SurfCutterImpl(inMesh, loops, this->ComputeBoolean2D, this->ComputeProjectedLoop);
     if (!dispatcher::Execute(points, scalars, loopsPts, worker))
     {
       worker(points, scalars, loopsPts);
@@ -132,6 +135,9 @@ int SurfaceCutter::RequestData(vtkInformation* request, vtkInformationVector** i
 
   if (!this->TagAcquiredPoints)
     output->GetPointData()->RemoveArray("Acquired");
+
+  if (!this->TagIntersections)
+    output->GetPointData()->RemoveArray("Intersected");
 
   return 1;
 }
