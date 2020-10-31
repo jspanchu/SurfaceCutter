@@ -197,7 +197,7 @@ int main(int argc, char** argv) {
     auto surfCutter_ = vtkSmartPointer<SurfaceCutter>::New();
     surfCutter_->SetInputConnection(0, meshTransformFilter->GetOutputPort());
     surfCutter_->SetInputConnection(1, loopsReader->GetOutputPort());
-    surfCutter_->SetInsideOut(false);
+    surfCutter_->SetInsideOut(insideOut);
     surfCutter = vtkAlgorithm::SafeDownCast(surfCutter_);
   }
   else if (useCookieCutter)

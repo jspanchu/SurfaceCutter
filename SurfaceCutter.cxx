@@ -53,6 +53,31 @@ int SurfaceCutter::FillInputPortInformation(int port, vtkInformation* info)
   return 1;
 }
 
+int SurfaceCutter::FillOutputPortInformation(int vtkNotUsed(port), vtkInformation* info)
+{
+  info->Set(vtkDataObject::DATA_TYPE_NAME(), "vtkPolyData");
+  return 1;
+}
+
+int SurfaceCutter::RequestDataObject(vtkInformation* request, vtkInformationVector** inputVector, vtkInformationVector* outputVector)
+{
+  for (int i = 0; i < this->GetNumberOfOutputPorts(); ++i)
+  {
+    vtkInformation* outInfo = outputVector->GetInformationObject(i);
+    vtkPolyData* output = dynamic_cast<vtkPolyData*>(
+      outInfo->Get(vtkDataObject::DATA_OBJECT()));
+    if (!output)
+    {
+      output = vtkPolyData::New();
+      outInfo->Set(vtkDataObject::DATA_OBJECT(), output);
+      output->FastDelete();
+      this->GetOutputPortInformation(i)->Set(
+        vtkDataObject::DATA_EXTENT_TYPE(), output->GetExtentType());
+    }
+  }
+  return 1;
+}
+
 void SurfaceCutter::SetLoops(vtkDataSet* loops)
 {
   this->SetInputData(1, loops);
@@ -62,7 +87,7 @@ int SurfaceCutter::RequestData(vtkInformation* request, vtkInformationVector** i
 {
   vtkSmartPointer<vtkDataSet> input = vtkDataSet::GetData(inputVector[0]->GetInformationObject(0));
   vtkSmartPointer<vtkPolyData> loopsIn = vtkPolyData::GetData(inputVector[1]->GetInformationObject(0));
-  vtkSmartPointer<vtkDataSet> output = vtkDataSet::GetData(outputVector->GetInformationObject(0));
+  vtkSmartPointer<vtkPolyData> output = vtkPolyData::GetData(outputVector->GetInformationObject(0));
 
   if (!loopsIn->GetNumberOfPoints())
   {
@@ -104,6 +129,7 @@ int SurfaceCutter::RequestData(vtkInformation* request, vtkInformationVector** i
   }
 
   using dispatcher = vtkArrayDispatch::Dispatch3ByValueType<vtkArrayDispatch::Reals, vtkArrayDispatch::Reals, vtkArrayDispatch::Reals>;
+
   if (input->IsA("vtkPolyData"))
   {
     vtkSmartPointer<vtkPolyData> inMesh = vtkPolyData::SafeDownCast(input);
