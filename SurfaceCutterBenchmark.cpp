@@ -19,7 +19,6 @@
 #include <vtkTransformFilter.h>
 #include <vtkUnstructuredGrid.h>
 #include <vtkXMLPolyDataReader.h>
-#include <vtkXMLPolyDataWriter.h>
 #include <vtkXMLUnstructuredGridReader.h>
 #include <vtkCookieCutter.h>
 #include <SurfaceCutter.h>
@@ -221,9 +220,14 @@ int main(int argc, char** argv) {
   }
 
   auto meshMapper = vtkSmartPointer<vtkDataSetMapper>::New();
-  meshMapper->SetInputConnection(surfCutter->GetOutputPort());
+  meshMapper->SetInputConnection(surfCutter->GetOutputPort(0));
   meshMapper->SetScalarModeToDefault();
   meshMapper->ScalarVisibilityOn();
+
+  auto projLoopsMapper = vtkSmartPointer<vtkDataSetMapper>::New();
+  projLoopsMapper->SetInputConnection(surfCutter->GetOutputPort(1));
+  projLoopsMapper->SetScalarModeToDefault();
+  projLoopsMapper->ScalarVisibilityOn();
 
   auto polysMapper = vtkSmartPointer<vtkDataSetMapper>::New();
   polysMapper->SetInputConnection(loopsReader->GetOutputPort());
@@ -233,14 +237,20 @@ int main(int argc, char** argv) {
   meshActor->GetProperty()->EdgeVisibilityOn();
   meshActor->SetMapper(meshMapper);
 
+  auto projLoopsActor = vtkSmartPointer<vtkActor>::New();
+  projLoopsActor->GetProperty()->SetRepresentationToWireframe();
+  projLoopsActor->SetMapper(projLoopsMapper);
+  projLoopsActor->GetProperty()->SetOpacity(0.7);
+  projLoopsActor->GetProperty()->SetLineWidth(15);
+
   auto polysActor = vtkSmartPointer<vtkActor>::New();
   polysActor->SetMapper(polysMapper);
   polysActor->GetProperty()->SetRepresentationToWireframe();
-  polysActor->GetProperty()->SetLineWidth(6);
-  polysActor->GetProperty()->SetOpacity(0.5);
+  polysActor->GetProperty()->SetLineWidth(2);
 
   auto renderer = vtkSmartPointer<vtkRenderer>::New();
   renderer->AddActor(meshActor);
+  renderer->AddActor(projLoopsActor);
   renderer->AddActor(polysActor);
   renderer->SetBackground(colors->GetColor3d("BkgColor").GetData());
 

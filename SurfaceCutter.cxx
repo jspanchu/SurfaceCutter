@@ -19,11 +19,9 @@ vtkStandardNewMacro(SurfaceCutter);
 
 SurfaceCutter::SurfaceCutter()
 {
-  this->ComputeBoolean2D = true;
-  this->ComputeProjectedLoop = true;
+  this->ColorAcquiredPts = true;
+  this->ColorLoopEdges = true;
   this->InsideOut = true; // default: remove portions outside loop polygons.
-  this->TagAcquiredPoints = true;
-  this->TagIntersections = true;
 
   this->SetNumberOfInputPorts(2);
   this->SetNumberOfOutputPorts(2);
@@ -78,26 +76,29 @@ int SurfaceCutter::RequestDataObject(vtkInformation* request, vtkInformationVect
   return 1;
 }
 
-void SurfaceCutter::SetLoops(vtkDataSet* loops)
+void SurfaceCutter::SetLoops(vtkPointSet* loops)
 {
   this->SetInputData(1, loops);
 }
 
 int SurfaceCutter::RequestData(vtkInformation* request, vtkInformationVector** inputVector, vtkInformationVector* outputVector)
 {
-  vtkSmartPointer<vtkDataSet> input = vtkDataSet::GetData(inputVector[0]->GetInformationObject(0));
-  vtkSmartPointer<vtkPolyData> loopsIn = vtkPolyData::GetData(inputVector[1]->GetInformationObject(0));
-  vtkSmartPointer<vtkPolyData> output = vtkPolyData::GetData(outputVector->GetInformationObject(0));
+  vtkSmartPointer<vtkPointSet> inMesh = vtkPointSet::GetData(inputVector[0]->GetInformationObject(0));
+  vtkSmartPointer<vtkPolyData> inLoops = vtkPolyData::GetData(inputVector[1]->GetInformationObject(0));
 
-  if (!loopsIn->GetNumberOfPoints())
+  vtkSmartPointer<vtkPolyData> cutOutput = vtkPolyData::GetData(outputVector->GetInformationObject(0));
+  vtkSmartPointer<vtkPolyData> projLoops = vtkPolyData::GetData(outputVector->GetInformationObject(1));
+
+  if (!inLoops->GetNumberOfPoints())
   {
     return 1;
   }
 
+  // get what's needed and work with it since cellIter->GetPointIds() is not exactly thread-safe.
   auto loops = vtkSmartPointer<vtkPolyData>::New();
-  loops->SetPoints(loopsIn->GetPoints());
-  loops->SetPolys(loopsIn->GetPolys());
-  loops->GetCellData()->PassData(loopsIn->GetCellData());
+  loops->SetPoints(inLoops->GetPoints());
+  loops->SetPolys(inLoops->GetPolys());
+  loops->GetCellData()->PassData(inLoops->GetCellData());
 
   vtkDataArray* insideOuts;
   if ((insideOuts = loops->GetCellData()->GetArray("InsideOuts")) == nullptr)
@@ -120,50 +121,43 @@ int SurfaceCutter::RequestData(vtkInformation* request, vtkInformationVector** i
     vtkDebugMacro(<< "Input surface is missing scalars. Will add dummy scalars");
     auto _dummy = vtkSmartPointer<vtkAOSDataArrayTemplate<float>>::New();
     _dummy->SetNumberOfComponents(1);
-    _dummy->SetNumberOfTuples(input->GetNumberOfPoints());
+    _dummy->SetNumberOfTuples(inMesh->GetNumberOfPoints());
     _dummy->SetName("DummyScalars");
     _dummy->FillValue(0.0);
-    input->GetPointData()->AddArray(_dummy);
+    inMesh->GetPointData()->AddArray(_dummy);
     scalars = _dummy;
     dummyAdded = true;
   }
 
   using dispatcher = vtkArrayDispatch::Dispatch3ByValueType<vtkArrayDispatch::Reals, vtkArrayDispatch::Reals, vtkArrayDispatch::Reals>;
-
-  if (input->IsA("vtkPolyData"))
+  
+  vtkDataArray* points = inMesh->GetPoints()->GetData();
+  auto worker = SurfCutterImpl(inMesh, loops);
+  if (!dispatcher::Execute(points, scalars, loopsPts, worker))
   {
-    vtkSmartPointer<vtkPolyData> inMesh = vtkPolyData::SafeDownCast(input);
-    vtkDataArray* points = inMesh->GetPoints()->GetData();
-    auto worker = SurfCutterImpl(inMesh, loops, this->ComputeBoolean2D, this->ComputeProjectedLoop);
-    if (!dispatcher::Execute(points, scalars, loopsPts, worker))
-    {
-      worker(points, scalars, loopsPts);
-    }
-    output->ShallowCopy(worker.outMesh);
-  }  
-  else if (input->IsA("vtkUnstructuredGrid"))
-  {
-    vtkSmartPointer<vtkUnstructuredGrid> inMesh = vtkUnstructuredGrid::SafeDownCast(input);
-    vtkDataArray* points = inMesh->GetPoints()->GetData();
-    auto worker = SurfCutterImpl(inMesh, loops, this->ComputeBoolean2D, this->ComputeProjectedLoop);
-    if (!dispatcher::Execute(points, scalars, loopsPts, worker))
-    {
-      worker(points, scalars, loopsPts);
-    }
-    output->ShallowCopy(worker.outMesh);
+    worker(points, scalars, loopsPts);
   }
+  cutOutput->ShallowCopy(worker.outMesh);
+  projLoops->ShallowCopy(worker.outLoops);
+  projLoops->GetPointData()->SetActiveScalars("Intersected");
 
   if (dummyAdded)
   {
-    input->GetPointData()->RemoveArray("DummyScalars");
-    output->GetPointData()->RemoveArray("DummyScalars");
+    inMesh->GetPointData()->RemoveArray("DummyScalars");
+    cutOutput->GetPointData()->RemoveArray("DummyScalars");
   }
 
-  if (!this->TagAcquiredPoints)
-    output->GetPointData()->RemoveArray("Acquired");
+  if (!this->ColorAcquiredPts)
+  {
+    cutOutput->GetPointData()->RemoveArray("Acquired");
+    projLoops->GetPointData()->RemoveArray("Acquired");
+  }
 
-  if (!this->TagIntersections)
-    output->GetPointData()->RemoveArray("Intersected");
+  if (!this->ColorLoopEdges)
+  {
+    cutOutput->GetPointData()->RemoveArray("Intersected");
+    projLoops->GetPointData()->RemoveArray("Intersected");
+  }
 
   return 1;
 }

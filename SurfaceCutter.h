@@ -1,44 +1,34 @@
 #ifndef SurfaceCutter_h__
 #define SurfaceCutter_h__
 
-#include <vtkDataSetAlgorithm.h>
+#include <vtkPointSetAlgorithm.h>
 
-class SurfaceCutter : public vtkDataSetAlgorithm {
+class SurfaceCutter : public vtkPointSetAlgorithm {
 public:
   static SurfaceCutter* New();
-  vtkTypeMacro(SurfaceCutter, vtkDataSetAlgorithm);
+  vtkTypeMacro(SurfaceCutter, vtkPointSetAlgorithm);
 
-  vtkBooleanMacro(ComputeBoolean2D, bool);
-  vtkSetMacro(ComputeBoolean2D, bool);
-  vtkGetMacro(ComputeBoolean2D, bool);
+  vtkBooleanMacro(ColorAcquiredPts, bool);
+  vtkSetMacro(ColorAcquiredPts, bool);
+  vtkGetMacro(ColorAcquiredPts, bool);
 
-  vtkBooleanMacro(ComputeProjectedLoop, bool);
-  vtkSetMacro(ComputeProjectedLoop, bool);
-  vtkGetMacro(ComputeProjectedLoop, bool);
+  vtkBooleanMacro(ColorLoopEdges, bool);
+  vtkSetMacro(ColorLoopEdges, bool);
+  vtkGetMacro(ColorLoopEdges, bool);
 
   vtkBooleanMacro(InsideOut, bool); // default: remove portions outside loop polygons.
   vtkSetMacro(InsideOut, bool);
   vtkGetMacro(InsideOut, bool);
 
-  vtkBooleanMacro(TagAcquiredPoints, bool);
-  vtkSetMacro(TagAcquiredPoints, bool);
-  vtkGetMacro(TagAcquiredPoints, bool);
-
-  vtkBooleanMacro(TagIntersections, bool);
-  vtkSetMacro(TagIntersections, bool);
-  vtkGetMacro(TagIntersections, bool);
-
-  void SetLoops(vtkDataSet* loops);
+  void SetLoops(vtkPointSet* loops);
 
 protected:
   SurfaceCutter();
   ~SurfaceCutter();
 
-  bool ComputeBoolean2D;
-  bool ComputeProjectedLoop;
+  bool ColorAcquiredPts;
+  bool ColorLoopEdges;
   bool InsideOut;
-  bool TagAcquiredPoints;
-  bool TagIntersections;
 
   int FillInputPortInformation(int port, vtkInformation* info) override;
   int FillOutputPortInformation(int port, vtkInformation* info) override;
