@@ -16,6 +16,7 @@
 #include <vtkSmartPointer.h>
 #include <vtkTriangle.h>
 #include <vtkUnstructuredGrid.h>
+#include <vtkXMLPolyDataWriter.h>
 
 #include <algorithm>
 #include <array>
