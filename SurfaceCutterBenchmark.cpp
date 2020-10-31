@@ -19,6 +19,7 @@
 #include <vtkTransformFilter.h>
 #include <vtkUnstructuredGrid.h>
 #include <vtkXMLPolyDataReader.h>
+#include <vtkXMLPolyDataWriter.h>
 #include <vtkXMLUnstructuredGridReader.h>
 #include <vtkCookieCutter.h>
 #include <SurfaceCutter.h>
@@ -105,8 +106,8 @@ static void KeypressCallbackFunction(vtkObject* caller, long unsigned int eventI
 int main(int argc, char** argv) {
 
   bool useCookieCutter(false), movable(true), useClipDataSet(false), insideOut(true);
-  std::string meshFile = "data/Triangle.vtp";
-  std::string loopsFile = "data/Case5.vtp";
+  std::string meshFile = "data/BigSurface.vtp";
+  std::string loopsFile = "data/TestPolys2.vtp";
 
   int arg = 0;
   do
@@ -277,7 +278,6 @@ int main(int argc, char** argv) {
   if (movable)
   {
     auto keypressCallback = vtkSmartPointer<vtkCallbackCommand>::New();
-    // Allow the observer to access the sphereSource
     keypressCallback->SetClientData(meshTransform);
     keypressCallback->SetCallback(KeypressCallbackFunction);
     renderWindowInteractor->AddObserver(vtkCommand::KeyPressEvent, keypressCallback);
