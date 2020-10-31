@@ -22,13 +22,16 @@ cutter->SetInputConnection(1, yyy->GetOutputPort());
 // InsideOutOn: retain surface inside loops. InsideOutOff: retain surface outside loops.
 cutter->InsideOutOn(); // (or) cutter->InsideOutOff(); default is on.
 
-// TagAcquiredPointsOn: Loops points will be tagged with 1. Remaining points will be tagged 0.
-cutter->TagAcquiredPointsOn(); // (or) cutter->TagAcquiredPointsOff(); default is on.
+// ColorAcquiredPtsOn: Loop points will be tagged '1'. Remaining points will be tagged 0.
+cutter->ColorAcquiredPtsOn(); // (or) cutter->ColorAcquiredPtsOff(); default is on.
 
-// ComputeBoolean2DOn: Remove triangles from surface when necessary (inside/outside a loop)
-cutter->ComputeBoolean2DOn(); // (or) cutter->ComputeBoolean2DOff(); default is on.
+// ColorLoopEdgesOn: Loop edges projected upon surface will be tagged '1'.
+cutter->ColorLoopEdgesOn(); // (or) cutter->ColorLoopEdgesOff(); default is on.
 
 cutter->Update();
+
+cutMesh = cutter->GetOutput(0); 
+projectedLoops = cutter->GetOutput(1);
 
 ```
 
