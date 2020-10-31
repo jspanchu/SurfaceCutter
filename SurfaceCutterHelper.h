@@ -315,21 +315,22 @@ namespace
   template<typename PointsT, typename ScalarsT>
   struct MeshPointMeta {
     MeshPointMeta() {}
-    MeshPointMeta(const std::array<PointsT, 3>& coord_, const ScalarsT& scalar_, const int& isAcquired_)
-      : coord(coord_), scalar(scalar_), isAcquired(isAcquired_) {}
+    MeshPointMeta(const std::array<PointsT, 3>& coord_, const ScalarsT& scalar_, const int& isAcquired_, const int& isIntersect_)
+      : coord(coord_), scalar(scalar_), isAcquired(isAcquired_), isIntersect(isIntersect_) {}
     std::array<PointsT, 3> coord;
     ScalarsT scalar;
     int isAcquired;
+    int isIntersect;
   };
 
   template<typename PointsT, typename ScalarsT>
   struct TriMeta {
     TriMeta()
     {
-      discard = false; 
+      discard = false;
     }
-    TriMeta(const std::array<std::array<PointsT, 3>, 3>& coords_, const std::array<ScalarsT, 3>& scalars_, const std::array<int, 3>& isAcquired_, const std::array<vtkIdType, 3>& verts_)
-      : coords(coords_), scalars(scalars_), isAcquired(isAcquired_), verts(verts_)
+    TriMeta(const std::array<std::array<PointsT, 3>, 3>& coords_, const std::array<ScalarsT, 3>& scalars_, const std::array<int, 3>& isAcquired_, const std::array<int, 3>& isIntersect_, const std::array<vtkIdType, 3>& verts_)
+      : coords(coords_), scalars(scalars_), isAcquired(isAcquired_), isIntersect(isIntersect_), verts(verts_)
     {
       for (std::size_t iPt = 0; iPt < 3; ++iPt)
       {
@@ -347,6 +348,7 @@ namespace
     std::array<std::array<PointsT, 3>, 3> coords;
     std::array<ScalarsT, 3> scalars;
     std::array<int, 3> isAcquired;
+    std::array<int, 3> isIntersect;
     std::array<vtkIdType, 3> verts;
     vtkBoundingBox bbox;
     bool discard;
@@ -389,7 +391,7 @@ namespace
     auto smIter = mesh->NewCellIterator();
     std::array<std::array<PointsT, 3>, 3> coords;
     std::array<ScalarsT, 3> scalars;
-    std::array<int, 3> isAcquired;
+    std::array<int, 3> isAcquired, isIntersect;
     std::array<vtkIdType, 3> verts;
 
     for (smIter->InitTraversal(); !smIter->IsDoneWithTraversal(); smIter->GoToNextCell())
@@ -404,8 +406,9 @@ namespace
         coords[iPt] = meshInfo[verts[iPt]].coord;
         scalars[iPt] = meshInfo[verts[iPt]].scalar;
         isAcquired[iPt] = meshInfo[verts[iPt]].isAcquired;
+        isIntersect[iPt] = meshInfo[verts[iPt]].isIntersect;
       }
-      trisInfo.emplace_back(coords, scalars, isAcquired, verts);
+      trisInfo.emplace_back(coords, scalars, isAcquired, isIntersect, verts);
     }
   }
 
@@ -544,15 +547,16 @@ namespace
 
   struct SurfCutterImpl
   {
-    SurfCutterImpl(vtkSmartPointer<vtkDataSet> inMesh_, vtkSmartPointer<vtkDataSet> outMesh_, vtkSmartPointer<vtkPolyData> loops_, const std::string& scalarsName_, const bool& insideOut_, const bool& computeBool2d_)
-      : inMesh(inMesh_), outMesh(outMesh_), loops(loops_), scalarsName(scalarsName_), insideOut(insideOut_), computeBool2d(computeBool2d_)
-    {}
+    SurfCutterImpl(vtkSmartPointer<vtkDataSet> inMesh_, vtkSmartPointer<vtkPolyData> loops_, const bool& computeBool2d_)
+      : inMesh(inMesh_), loops(loops_), computeBool2d(computeBool2d_)
+    {
+      scalarsName = "Scalars";
+    }
 
     vtkSmartPointer<vtkDataSet> inMesh;
-    vtkSmartPointer<vtkDataSet> outMesh;
+    vtkSmartPointer<vtkPolyData> outMesh;
     vtkSmartPointer<vtkPolyData> loops;
     std::string scalarsName;
-    bool insideOut;
     bool computeBool2d;
 
     template<typename PointsT, typename ScalarsT>
@@ -566,18 +570,22 @@ namespace
 
       auto coords = vtkSmartPointer<vtkAOSDataArrayTemplate<PointsT>>::New();
       auto scalars = vtkSmartPointer<vtkAOSDataArrayTemplate<ScalarsT>>::New();
-      auto acquisition = vtkSmartPointer<vtkAOSDataArrayTemplate<int>>::New();
+      auto acquisitions = vtkSmartPointer<vtkAOSDataArrayTemplate<int>>::New();
+      auto intesections = vtkSmartPointer<vtkAOSDataArrayTemplate<int>>::New();
 
       coords->SetNumberOfComponents(3);
       scalars->SetNumberOfComponents(1);
-      acquisition->SetNumberOfComponents(1);
+      acquisitions->SetNumberOfComponents(1);
+      intesections->SetNumberOfComponents(1);
 
       coords->SetNumberOfTuples(numPoints);
       scalars->SetNumberOfTuples(numPoints);
-      acquisition->SetNumberOfTuples(numPoints);
+      acquisitions->SetNumberOfTuples(numPoints);
+      intesections->SetNumberOfTuples(numPoints);
 
       scalars->SetName(scalarsName.c_str());
-      acquisition->SetName("Acquired");
+      acquisitions->SetName("Acquired");
+      intesections->SetName("Intersected");
 
       for (vtkIdType tupleIdx = 0; tupleIdx < numPoints; ++tupleIdx)
       {
@@ -587,14 +595,16 @@ namespace
           coords->SetTypedComponent(tupleIdx, iDim, meshInfo[ptId].coord[iDim]);
 
         scalars->SetValue(tupleIdx, meshInfo[ptId].scalar);
-        acquisition->SetValue(tupleIdx, meshInfo[ptId].isAcquired);
+        acquisitions->SetValue(tupleIdx, meshInfo[ptId].isAcquired);
+        intesections->SetValue(tupleIdx, meshInfo[ptId].isIntersect);
       }
 
       auto points = vtkSmartPointer<vtkPoints>::New();
       points->SetData(coords);
       mesh->SetPoints(points);
       mesh->GetPointData()->AddArray(scalars);
-      mesh->GetPointData()->AddArray(acquisition);
+      mesh->GetPointData()->AddArray(acquisitions);
+      mesh->GetPointData()->AddArray(intesections);
       mesh->Allocate(cells.size());
 
       for (const auto& cell : cells)
@@ -624,26 +634,28 @@ namespace
     template<typename PointsT, typename ScalarsT>
     void CreateTriMesh(const std::vector<MeshPointMeta<PointsT, ScalarsT>>& meshInfos, const std::vector<TriMeta<PointsT, ScalarsT>>& tris)
     {
-      auto mesh = vtkSmartPointer<vtkPolyData>::New();
+      outMesh = vtkSmartPointer<vtkPolyData>::New();
 
       vtkIdType numPoints = meshInfos.size();
-      if (!numPoints)
-        outMesh->ShallowCopy(mesh);
 
       auto coords = vtkSmartPointer<vtkAOSDataArrayTemplate<PointsT>>::New();
       auto scalars = vtkSmartPointer<vtkAOSDataArrayTemplate<ScalarsT>>::New();
-      auto acquisition = vtkSmartPointer<vtkAOSDataArrayTemplate<int>>::New();
+      auto acquisitions = vtkSmartPointer<vtkAOSDataArrayTemplate<int>>::New();
+      auto intesections = vtkSmartPointer<vtkAOSDataArrayTemplate<int>>::New();
 
       coords->SetNumberOfComponents(3);
       scalars->SetNumberOfComponents(1);
-      acquisition->SetNumberOfComponents(1);
+      acquisitions->SetNumberOfComponents(1);
+      intesections->SetNumberOfComponents(1);
 
       coords->SetNumberOfTuples(numPoints);
       scalars->SetNumberOfTuples(numPoints);
-      acquisition->SetNumberOfTuples(numPoints);
+      acquisitions->SetNumberOfTuples(numPoints);
+      intesections->SetNumberOfTuples(numPoints);
 
       scalars->SetName(scalarsName.c_str());
-      acquisition->SetName("Acquired");
+      acquisitions->SetName("Acquired");
+      intesections->SetName("Intersected");
 
       for (vtkIdType tupleIdx = 0; tupleIdx < numPoints; ++tupleIdx)
       {
@@ -651,26 +663,27 @@ namespace
           coords->SetTypedComponent(tupleIdx, iDim, meshInfos[tupleIdx].coord[iDim]);
 
         scalars->SetValue(tupleIdx, meshInfos[tupleIdx].scalar);
-        acquisition->SetValue(tupleIdx, meshInfos[tupleIdx].isAcquired);
+        acquisitions->SetValue(tupleIdx, meshInfos[tupleIdx].isAcquired);
+        intesections->SetValue(tupleIdx, meshInfos[tupleIdx].isIntersect);
       }
 
       auto points = vtkSmartPointer<vtkPoints>::New();
       points->SetData(coords);
-      mesh->SetPoints(points);
-      mesh->GetPointData()->AddArray(scalars);
-      mesh->GetPointData()->AddArray(acquisition);
-      mesh->Allocate(tris.size());
+      outMesh->SetPoints(points);
+      outMesh->GetPointData()->SetScalars(scalars);
+      outMesh->GetPointData()->AddArray(acquisitions);
+      outMesh->GetPointData()->AddArray(intesections);
+      outMesh->Allocate(tris.size());
 
       for (const auto& tri : tris)
       {
         if (tri.discard)
           continue;
-
-        mesh->InsertNextCell(VTK_TRIANGLE, 3, tri.verts.data());
+        outMesh->InsertNextCell(VTK_TRIANGLE, 3, tri.verts.data());
       }
       auto cleanUp = vtkSmartPointer<vtkCleanPolyData>::New();
-      cleanUp->SetInputData(mesh);
-      cleanUp->PointMergingOff();
+      cleanUp->SetInputData(outMesh);
+      cleanUp->PointMergingOn();
       cleanUp->Update();
       outMesh->ShallowCopy(cleanUp->GetOutput());
     }
@@ -700,11 +713,19 @@ namespace
       if (!insideOuts)
         return;
 
-      auto acquisition = vtkSmartPointer<vtkAOSDataArrayTemplate<int>>::New();
-      acquisition->SetNumberOfComponents(1);
-      acquisition->SetNumberOfTuples(numPoints1);
-      acquisition->SetName("Acquired");
-      acquisition->FillValue(0);
+      scalarsName = scalars->GetName();
+
+      auto acquisitions = vtkSmartPointer<vtkAOSDataArrayTemplate<int>>::New();
+      acquisitions->SetNumberOfComponents(1);
+      acquisitions->SetNumberOfTuples(numPoints1);
+      acquisitions->SetName("Acquired");
+      acquisitions->FillValue(0);
+
+      auto intersections = vtkSmartPointer<vtkAOSDataArrayTemplate<int>>::New();
+      intersections->SetNumberOfComponents(1);
+      intersections->SetNumberOfTuples(numPoints1);
+      intersections->SetName("Intersected");
+      intersections->FillValue(0);
 
       using Points1Access = vtkDataArrayAccessor<PointsArrT1>;
       using ScalarsAccess = vtkDataArrayAccessor<ScalarsArrT>;
@@ -763,7 +784,7 @@ namespace
           _xs[idx] = loopsInfo.coords[p0][0];
           _ys[idx] = loopsInfo.coords[p0][1];
         }
-        
+
         // pertaining to loop polygon
         double xmin = *std::min_element(_xs.begin(), _xs.end());
         double xmax = *std::max_element(_xs.begin(), _xs.end());
@@ -795,13 +816,14 @@ namespace
       {
         meshAccess.Get(tupleIdx, meshInfo[tupleIdx].coord.data());
         meshInfo[tupleIdx].scalar = scalarsAccess.Get(tupleIdx, 0);
-        meshInfo[tupleIdx].isAcquired = acquisition->GetValue(tupleIdx);
+        meshInfo[tupleIdx].isAcquired = acquisitions->GetValue(tupleIdx);
+        meshInfo[tupleIdx].isIntersect = intersections->GetValue(tupleIdx);
         triPtIds[tupleIdx] = tupleIdx;
       }
       trisInfo.reserve(numCells);
       extractTriInfo(inMesh, triPtIds, meshInfo, trisInfo);
       // 3 new triangles per loop's point, 3 new intersection points per triangle, 3 new intersection points for edge.
-      meshInfo.reserve(meshInfo.size() + numPoints2 * 3 * 3 * 3); 
+      meshInfo.reserve(meshInfo.size() + numPoints2 * 3 * 3 * 3);
       // same as meshInfo, further 3 sub triangles per each new triangle.
       trisInfo.reserve(trisInfo.size() + numPoints2 * 3 * 3 * 3 * 3);
 
@@ -844,7 +866,10 @@ namespace
               bool xSimilar = std::abs(triInfo.xs[triVert] - coord[0]) <= std::numeric_limits<float>::epsilon();
               bool ySimilar = std::abs(triInfo.ys[triVert] - coord[1]) <= std::numeric_limits<float>::epsilon();
               if (xSimilar && ySimilar)
-                acquisition->SetValue(triInfo.verts[triVert], 1);
+              {
+                acquisitions->SetValue(triInfo.verts[triVert], 1);
+                intersections->SetValue(triInfo.verts[triVert], 1);
+              }
             }
             continue; // move on to next point.
           }
@@ -853,7 +878,7 @@ namespace
           ScalarsT newScalar = triInterp<PointsT1, ScalarsT>(coord, triInfo.coords, triInfo.scalars);
 
           smIds.emplace_back(meshInfo.size());
-          meshInfo.emplace_back(coord, newScalar, 1);
+          meshInfo.emplace_back(coord, newScalar, 1, 1);
         } // end interpolation loop
 
         if (smIds.size() > 3)
@@ -932,7 +957,7 @@ namespace
               auto newScalar = triInterp<PointsT1, ScalarsT>(pc, triInfo.coords, triInfo.scalars);
 
               smIds.emplace_back(meshInfo.size());
-              meshInfo.emplace_back(pc, newScalar, 0);
+              meshInfo.emplace_back(pc, newScalar, 0, 1);
 
               loopHits.emplace_back(static_cast<vtkIdType>(smIds.size() - 1));
               triHitAt.emplace_back(iTriEdge);
@@ -968,7 +993,7 @@ namespace
         for (const auto& smId : smIds)
         {
           smCoords.emplace_back(meshInfo[smId].coord);
-        } 
+        }
         auto centroid = compgeom::triCentroid(triInfo.coords[0], triInfo.coords[1], triInfo.coords[2]);
         std::vector<std::size_t> ccwIds_;
         compgeom::counterClockWise(smCoords, centroid, ccwIds_);
@@ -1040,12 +1065,6 @@ namespace
 
       // collect all triangles and finish
       CreateTriMesh(meshInfo, trisInfo);
-      if (outMesh->IsA("vtkUnstructuredGrid"))
-      {
-        vtkSmartPointer<vtkCellArray> cells = vtkPolyData::SafeDownCast(outMesh)->GetPolys();
-        auto meshUgrid = vtkUnstructuredGrid::SafeDownCast(outMesh);
-        meshUgrid->SetCells(VTK_TRIANGLE, cells);
-      }
     }
   };
 }
