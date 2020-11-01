@@ -240,19 +240,19 @@ int main(int argc, char** argv) {
   auto projLoopsActor = vtkSmartPointer<vtkActor>::New();
   projLoopsActor->GetProperty()->SetRepresentationToWireframe();
   projLoopsActor->SetMapper(projLoopsMapper);
-  projLoopsActor->GetProperty()->SetOpacity(0.7);
-  projLoopsActor->GetProperty()->SetLineWidth(15);
+  projLoopsActor->GetProperty()->SetLineWidth(4);
 
   auto polysActor = vtkSmartPointer<vtkActor>::New();
   polysActor->SetMapper(polysMapper);
   polysActor->GetProperty()->SetRepresentationToWireframe();
-  polysActor->GetProperty()->SetLineWidth(2);
+  polysActor->GetProperty()->SetLineWidth(1);
 
   auto renderer = vtkSmartPointer<vtkRenderer>::New();
   renderer->AddActor(meshActor);
   renderer->AddActor(projLoopsActor);
   renderer->AddActor(polysActor);
-  renderer->SetBackground(colors->GetColor3d("BkgColor").GetData());
+  //renderer->SetBackground(colors->GetColor3d("BkgColor").GetData());
+  renderer->SetBackground(1.0, 1.0, 1.0);
 
   auto renderWindow = vtkSmartPointer<vtkRenderWindow>::New();
   renderWindow->SetSize(640, 480);
