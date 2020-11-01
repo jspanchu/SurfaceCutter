@@ -21,6 +21,7 @@ public:
   vtkGetMacro(InsideOut, bool);
 
   void SetLoops(vtkPointSet* loops);
+  void SetLoopsConnection(vtkAlgorithmOutput* output);
 
 protected:
   SurfaceCutter();

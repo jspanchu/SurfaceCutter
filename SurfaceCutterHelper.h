@@ -1,21 +1,6 @@
 #ifndef SurfaceCutterHelper_h__
 #define SurfaceCutterHelper_h__
 
-#include <vtkAOSDataArrayTemplate.h>
-#include <vtkArrayDispatch.h>
-#include <vtkBoundingBox.h>
-#include <vtkCellData.h>
-#include <vtkCellIterator.h>
-#include <vtkCleanPolyData.h>
-#include <vtkDataArrayAccessor.h>
-#include <vtkDataSet.h>
-#include <vtkDelaunay2D.h>
-#include <vtkPolyData.h>
-#include <vtkPolygon.h>
-#include <vtkPointData.h>
-#include <vtkSmartPointer.h>
-#include <vtkTriangle.h>
-
 #include <algorithm>
 #include <array>
 #include <vector>
@@ -23,6 +8,20 @@
 #include <map>
 #include <numeric>
 #include <utility>
+
+#include <vtkAOSDataArrayTemplate.h>
+#include <vtkArrayDispatch.h>
+#include <vtkBoundingBox.h>
+#include <vtkCellData.h>
+#include <vtkCellIterator.h>
+#include <vtkCleanPolyData.h>
+#include <vtkDataArrayAccessor.h>
+#include <vtkDelaunay2D.h>
+#include <vtkPolyData.h>
+#include <vtkPolygon.h>
+#include <vtkPointData.h>
+#include <vtkSmartPointer.h>
+#include <vtkTriangle.h>
 
 namespace compgeom
 {
@@ -547,23 +546,23 @@ namespace
   struct SurfCutterImpl
   {
   private:
-    std::vector<std::array<vtkIdType, 2>> globalConstraints;
+    std::vector<std::array<vtkIdType, 2>> m_Constraints;
   
   public:
-    SurfCutterImpl(vtkSmartPointer<vtkDataSet> inMesh_, vtkSmartPointer<vtkPolyData> inLoops_)
+    SurfCutterImpl(vtkSmartPointer<vtkPointSet> inMesh_, vtkSmartPointer<vtkPolyData> inLoops_)
       : inMesh(inMesh_), inLoops(inLoops_)
     {
       scalarsName = "Scalars";
     }
 
-    vtkSmartPointer<vtkDataSet> inMesh;
+    vtkSmartPointer<vtkPointSet> inMesh;
     vtkSmartPointer<vtkPolyData> outMesh;
     vtkSmartPointer<vtkPolyData> inLoops;
     vtkSmartPointer<vtkPolyData> outLoops;
     std::string scalarsName;
 
     template<typename PointsT, typename ScalarsT>
-    vtkSmartPointer<vtkDataSet> GetSubMesh(const std::vector<MeshPointMeta<PointsT, ScalarsT>>& meshInfo, const std::vector<vtkIdType>& subMeshIds, const std::vector<std::vector<vtkIdType>>& cells)
+    vtkSmartPointer<vtkPolyData> GetSubMesh(const std::vector<MeshPointMeta<PointsT, ScalarsT>>& meshInfo, const std::vector<vtkIdType>& subMeshIds, const std::vector<std::vector<vtkIdType>>& cells)
     {
       auto mesh = vtkSmartPointer<vtkPolyData>::New();
 
@@ -733,9 +732,9 @@ namespace
       outLoops->GetPointData()->SetScalars(scalars);
       outLoops->GetPointData()->AddArray(acquisitions);
       outLoops->GetPointData()->AddArray(intesections);
-      outLoops->Allocate(globalConstraints.size());
+      outLoops->Allocate(m_Constraints.size());
 
-      for (const auto& edge : globalConstraints)
+      for (const auto& edge : m_Constraints)
       {
         outLoops->InsertNextCell(VTK_LINE, 2, edge.data());
       }
@@ -772,7 +771,7 @@ namespace
         return;
 
       scalarsName = scalars->GetName();
-      globalConstraints.reserve(numLoops * (numPoints2 + 1)); // no. of intersections, a rough estimate 
+      m_Constraints.reserve(numLoops * (numPoints2 + 1)); // no. of intersections, a rough estimate 
 
       auto acquisitions = vtkSmartPointer<vtkAOSDataArrayTemplate<int>>::New();
       acquisitions->SetNumberOfComponents(1);
@@ -944,7 +943,7 @@ namespace
         {
           triInfo.discard = true;
           // setup constraints.
-          vtkSmartPointer<vtkPolyData> subMesh = vtkPolyData::SafeDownCast(GetSubMesh(meshInfo, smIds, TRIEDGESEGS));
+          vtkSmartPointer<vtkPolyData> subMesh = GetSubMesh(meshInfo, smIds, TRIEDGESEGS);
           // triangulate with constraints.
           auto del2d = vtkSmartPointer<vtkDelaunay2D>::New();
           del2d->SetInputData(subMesh);
@@ -1052,13 +1051,13 @@ namespace
           smCoords.emplace_back(meshInfo[smId].coord);
         }
         auto centroid = compgeom::triCentroid(triInfo.coords[0], triInfo.coords[1], triInfo.coords[2]);
-        std::vector<std::size_t> ccwIds_;
-        compgeom::counterClockWise(smCoords, centroid, ccwIds_);
+        std::vector<std::size_t> ccwIds;
+        compgeom::counterClockWise(smCoords, centroid, ccwIds);
         std::vector<std::vector<vtkIdType>> cells;
-        cells.emplace_back(std::vector<vtkIdType>(ccwIds_.begin(), ccwIds_.end()));
+        cells.emplace_back(std::vector<vtkIdType>(ccwIds.begin(), ccwIds.end()));
 
         // now triangulate (ear-cut) and apply loop edge constraints
-        vtkSmartPointer<vtkPolyData> subMesh = vtkPolyData::SafeDownCast(GetSubMesh<PointsT1, ScalarsT>(meshInfo, smIds, cells));
+        vtkSmartPointer<vtkPolyData> subMesh = GetSubMesh(meshInfo, smIds, cells);
         auto newPolys = vtkSmartPointer<vtkCellArray>::New();
         auto poly = vtkPolygon::New();
         auto ptIds = vtkIdList::New();
@@ -1107,7 +1106,7 @@ namespace
               break;
             }
           }
-          globalConstraints.emplace_back(std::array<vtkIdType, 2>({ smIds[constraint.first], smIds[constraint.second] }));
+          m_Constraints.emplace_back(std::array<vtkIdType, 2>({ smIds[constraint.first], smIds[constraint.second] }));
         }
 
         const auto& oldSz = trisInfo.size();
