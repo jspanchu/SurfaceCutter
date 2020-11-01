@@ -3,8 +3,6 @@
 #include <vtkAOSDataArrayTemplate.h>
 #include <vtkArrayDispatch.h>
 #include <vtkCellData.h>
-#include <vtkDataSet.h>
-#include <vtkXMLPolyDataWriter.h>
 #include <vtkInformation.h>
 #include <vtkInformationVector.h>
 #include <vtkObjectFactory.h>
@@ -81,20 +79,25 @@ void SurfaceCutter::SetLoops(vtkPointSet* loops)
   this->SetInputData(1, loops);
 }
 
+void SurfaceCutter::SetLoopsConnection(vtkAlgorithmOutput* output)
+{
+  this->SetInputConnection(1, output);
+}
+
 int SurfaceCutter::RequestData(vtkInformation* request, vtkInformationVector** inputVector, vtkInformationVector* outputVector)
 {
   vtkSmartPointer<vtkPointSet> inMesh = vtkPointSet::GetData(inputVector[0]->GetInformationObject(0));
   vtkSmartPointer<vtkPolyData> inLoops = vtkPolyData::GetData(inputVector[1]->GetInformationObject(0));
 
-  vtkSmartPointer<vtkPolyData> cutOutput = vtkPolyData::GetData(outputVector->GetInformationObject(0));
-  vtkSmartPointer<vtkPolyData> projLoops = vtkPolyData::GetData(outputVector->GetInformationObject(1));
+  vtkSmartPointer<vtkPolyData> outMesh = vtkPolyData::GetData(outputVector->GetInformationObject(0));
+  vtkSmartPointer<vtkPolyData> outLoops = vtkPolyData::GetData(outputVector->GetInformationObject(1));
 
   if (!inLoops->GetNumberOfPoints())
   {
     return 1;
   }
 
-  // get what's needed and work with it since cellIter->GetPointIds() is not exactly thread-safe.
+  // get what's needed and work with it since vtkCellIterator::GetPointIds() is not exactly thread-safe.
   auto loops = vtkSmartPointer<vtkPolyData>::New();
   loops->SetPoints(inLoops->GetPoints());
   loops->SetPolys(inLoops->GetPolys());
@@ -112,9 +115,8 @@ int SurfaceCutter::RequestData(vtkInformation* request, vtkInformationVector** i
     loops->GetCellData()->AddArray(_insideOuts);
   }
 
-  vtkDataArray* loopsPts = loops->GetPoints()->GetData();
   vtkDataArray* scalars;
-  bool dummyAdded = false;
+  bool dummyAdded = false; // remove dummy scalars from `inMesh` later.
   int assoc = vtkDataObject::FIELD_ASSOCIATION_POINTS;
   if ((scalars = this->GetInputArrayToProcess(0, 0, inputVector, assoc)) == nullptr)
   {
@@ -130,33 +132,34 @@ int SurfaceCutter::RequestData(vtkInformation* request, vtkInformationVector** i
   }
 
   using dispatcher = vtkArrayDispatch::Dispatch3ByValueType<vtkArrayDispatch::Reals, vtkArrayDispatch::Reals, vtkArrayDispatch::Reals>;
-  
+
   vtkDataArray* points = inMesh->GetPoints()->GetData();
+  vtkDataArray* loopsPts = loops->GetPoints()->GetData();
   auto worker = SurfCutterImpl(inMesh, loops);
   if (!dispatcher::Execute(points, scalars, loopsPts, worker))
   {
     worker(points, scalars, loopsPts);
   }
-  cutOutput->ShallowCopy(worker.outMesh);
-  projLoops->ShallowCopy(worker.outLoops);
-  projLoops->GetPointData()->SetActiveScalars("Intersected");
+  outMesh->ShallowCopy(worker.outMesh);
+  outLoops->ShallowCopy(worker.outLoops);
+  outLoops->GetPointData()->SetActiveScalars("Intersected");
 
   if (dummyAdded)
   {
     inMesh->GetPointData()->RemoveArray("DummyScalars");
-    cutOutput->GetPointData()->RemoveArray("DummyScalars");
+    outMesh->GetPointData()->RemoveArray("DummyScalars");
   }
 
   if (!this->ColorAcquiredPts)
   {
-    cutOutput->GetPointData()->RemoveArray("Acquired");
-    projLoops->GetPointData()->RemoveArray("Acquired");
+    outMesh->GetPointData()->RemoveArray("Acquired");
+    outLoops->GetPointData()->RemoveArray("Acquired");
   }
 
   if (!this->ColorLoopEdges)
   {
-    cutOutput->GetPointData()->RemoveArray("Intersected");
-    projLoops->GetPointData()->RemoveArray("Intersected");
+    outMesh->GetPointData()->RemoveArray("Intersected");
+    outLoops->GetPointData()->RemoveArray("Intersected");
   }
 
   return 1;
