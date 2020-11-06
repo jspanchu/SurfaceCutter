@@ -3,7 +3,8 @@
 
 #include <vtkPointSetAlgorithm.h>
 
-class SurfaceCutter : public vtkPointSetAlgorithm {
+class SurfaceCutter : public vtkPointSetAlgorithm
+{
 public:
   static SurfaceCutter* New();
   vtkTypeMacro(SurfaceCutter, vtkPointSetAlgorithm);
@@ -33,8 +34,10 @@ protected:
 
   int FillInputPortInformation(int port, vtkInformation* info) override;
   int FillOutputPortInformation(int port, vtkInformation* info) override;
-  int RequestDataObject(vtkInformation* request, vtkInformationVector** inputVector, vtkInformationVector* outputVector) override;
-  int RequestData(vtkInformation* request, vtkInformationVector** inputVector, vtkInformationVector* outputVector) override;
+  int RequestDataObject(vtkInformation* request, vtkInformationVector** inputVector,
+    vtkInformationVector* outputVector) override;
+  int RequestData(vtkInformation* request, vtkInformationVector** inputVector,
+    vtkInformationVector* outputVector) override;
 
 private:
   SurfaceCutter(const SurfaceCutter&) = delete;
