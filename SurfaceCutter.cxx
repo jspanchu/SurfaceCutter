@@ -6,12 +6,15 @@
 #include <vtkInformation.h>
 #include <vtkInformationVector.h>
 #include <vtkObjectFactory.h>
-#include <vtkPolyData.h>
 #include <vtkPointData.h>
+#include <vtkPolyData.h>
 #include <vtkSmartPointer.h>
 #include <vtkUnstructuredGrid.h>
 
 #include "SurfaceCutterHelper.h"
+
+using dispatchRRR = vtkArrayDispatch::Dispatch3ByValueType<vtkArrayDispatch::Reals,
+  vtkArrayDispatch::Reals, vtkArrayDispatch::Reals>;
 
 vtkStandardNewMacro(SurfaceCutter);
 
@@ -24,7 +27,8 @@ SurfaceCutter::SurfaceCutter()
   this->SetNumberOfInputPorts(2);
   this->SetNumberOfOutputPorts(2);
 
-  this->SetInputArrayToProcess(0, 0, 0, vtkDataObject::FIELD_ASSOCIATION_POINTS, vtkDataSetAttributes::AttributeTypes::SCALARS);
+  this->SetInputArrayToProcess(0, 0, 0, vtkDataObject::FIELD_ASSOCIATION_POINTS,
+    vtkDataSetAttributes::AttributeTypes::SCALARS);
 
   vtkDebugMacro(<< "Initialized " << this->GetClassNameInternal());
 }
@@ -38,13 +42,13 @@ int SurfaceCutter::FillInputPortInformation(int port, vtkInformation* info)
 {
   switch (port)
   {
-  case 0:
-    break;
-  case 1:
-    info->Set(vtkAlgorithm::INPUT_REQUIRED_DATA_TYPE(), "vtkPolyData");
-    break;
-  default:
-    break;
+    case 0:
+      break;
+    case 1:
+      info->Set(vtkAlgorithm::INPUT_REQUIRED_DATA_TYPE(), "vtkPolyData");
+      break;
+    default:
+      break;
   }
   return 1;
 }
@@ -55,13 +59,13 @@ int SurfaceCutter::FillOutputPortInformation(int vtkNotUsed(port), vtkInformatio
   return 1;
 }
 
-int SurfaceCutter::RequestDataObject(vtkInformation* request, vtkInformationVector** inputVector, vtkInformationVector* outputVector)
+int SurfaceCutter::RequestDataObject(
+  vtkInformation* request, vtkInformationVector** inputVector, vtkInformationVector* outputVector)
 {
   for (int i = 0; i < this->GetNumberOfOutputPorts(); ++i)
   {
     vtkInformation* outInfo = outputVector->GetInformationObject(i);
-    vtkPolyData* output = dynamic_cast<vtkPolyData*>(
-      outInfo->Get(vtkDataObject::DATA_OBJECT()));
+    vtkPolyData* output = dynamic_cast<vtkPolyData*>(outInfo->Get(vtkDataObject::DATA_OBJECT()));
     if (!output)
     {
       output = vtkPolyData::New();
@@ -84,20 +88,24 @@ void SurfaceCutter::SetLoopsConnection(vtkAlgorithmOutput* output)
   this->SetInputConnection(1, output);
 }
 
-int SurfaceCutter::RequestData(vtkInformation* request, vtkInformationVector** inputVector, vtkInformationVector* outputVector)
+int SurfaceCutter::RequestData(
+  vtkInformation* request, vtkInformationVector** inputVector, vtkInformationVector* outputVector)
 {
-  vtkSmartPointer<vtkPointSet> inMesh = vtkPointSet::GetData(inputVector[0]->GetInformationObject(0));
-  vtkSmartPointer<vtkPolyData> inLoops = vtkPolyData::GetData(inputVector[1]->GetInformationObject(0));
+  vtkSmartPointer<vtkPointSet> inMesh =
+    vtkPointSet::GetData(inputVector[0]->GetInformationObject(0));
+  vtkSmartPointer<vtkPolyData> inLoops =
+    vtkPolyData::GetData(inputVector[1]->GetInformationObject(0));
 
-  vtkSmartPointer<vtkPolyData> outMesh = vtkPolyData::GetData(outputVector->GetInformationObject(0));
-  vtkSmartPointer<vtkPolyData> outLoops = vtkPolyData::GetData(outputVector->GetInformationObject(1));
+  vtkSmartPointer<vtkPolyData> outMesh =
+    vtkPolyData::GetData(outputVector->GetInformationObject(0));
+  vtkSmartPointer<vtkPolyData> outLoops =
+    vtkPolyData::GetData(outputVector->GetInformationObject(1));
 
   if (!inLoops->GetNumberOfPoints())
   {
     return 1;
   }
 
-  // get what's needed and work with it since vtkCellIterator::GetPointIds() is not exactly thread-safe.
   auto loops = vtkSmartPointer<vtkPolyData>::New();
   loops->SetPoints(inLoops->GetPoints());
   loops->SetPolys(inLoops->GetPolys());
@@ -106,8 +114,9 @@ int SurfaceCutter::RequestData(vtkInformation* request, vtkInformationVector** i
   vtkDataArray* insideOuts;
   if ((insideOuts = loops->GetCellData()->GetArray("InsideOuts")) == nullptr)
   {
-    vtkDebugMacro(<< "Loop polygons do not have InsideOuts array. Will resort to " << this->GetClassNameInternal() << "::InsideOut = " << this->InsideOut);
-    auto _insideOuts = vtkSmartPointer<vtkAOSDataArrayTemplate<int>>::New();
+    vtkDebugMacro(<< "Loop polygons do not have InsideOuts array. Will resort to "
+                  << this->GetClassNameInternal() << "::InsideOut = " << this->InsideOut);
+    vtkNew<vtkAOSDataArrayTemplate<int>> _insideOuts;
     _insideOuts->SetNumberOfComponents(1);
     _insideOuts->SetNumberOfTuples(loops->GetNumberOfPolys());
     _insideOuts->SetName("InsideOuts");
@@ -121,7 +130,7 @@ int SurfaceCutter::RequestData(vtkInformation* request, vtkInformationVector** i
   if ((scalars = this->GetInputArrayToProcess(0, 0, inputVector, assoc)) == nullptr)
   {
     vtkDebugMacro(<< "Input surface is missing scalars. Will add dummy scalars");
-    auto _dummy = vtkSmartPointer<vtkAOSDataArrayTemplate<float>>::New();
+    vtkNew<vtkAOSDataArrayTemplate<int>> _dummy;
     _dummy->SetNumberOfComponents(1);
     _dummy->SetNumberOfTuples(inMesh->GetNumberOfPoints());
     _dummy->SetName("DummyScalars");
@@ -131,12 +140,10 @@ int SurfaceCutter::RequestData(vtkInformation* request, vtkInformationVector** i
     dummyAdded = true;
   }
 
-  using dispatcher = vtkArrayDispatch::Dispatch3ByValueType<vtkArrayDispatch::Reals, vtkArrayDispatch::Reals, vtkArrayDispatch::Reals>;
-
   vtkDataArray* points = inMesh->GetPoints()->GetData();
   vtkDataArray* loopsPts = loops->GetPoints()->GetData();
   auto worker = SurfCutterImpl(inMesh, loops);
-  if (!dispatcher::Execute(points, scalars, loopsPts, worker))
+  if (!dispatchRRR::Execute(points, scalars, loopsPts, worker))
   {
     worker(points, scalars, loopsPts);
   }

@@ -3,11 +3,11 @@
 
 #include <algorithm>
 #include <array>
-#include <vector>
 #include <limits>
 #include <map>
 #include <numeric>
 #include <utility>
+#include <vector>
 
 #include <vtkAOSDataArrayTemplate.h>
 #include <vtkArrayDispatch.h>
@@ -17,30 +17,34 @@
 #include <vtkCleanPolyData.h>
 #include <vtkDataArrayAccessor.h>
 #include <vtkDelaunay2D.h>
+#include <vtkNew.h>
+#include <vtkPointData.h>
 #include <vtkPolyData.h>
 #include <vtkPolygon.h>
-#include <vtkPointData.h>
 #include <vtkSmartPointer.h>
 #include <vtkTriangle.h>
 
 namespace compgeom
 {
   /*
-   * @brief Point-in-polygon. Handle degenerate cases too. https://wrf.ecse.rpi.edu/Research/Short_Notes/pnpoly.html
+   * @brief Point-in-polygon. Handle degenerate cases too.
+   * https://wrf.ecse.rpi.edu/Research/Short_Notes/pnpoly.html
    * @param nvert Number of vertices in the polygon.
    * @param vertx Array containing the x-coordinates of the polygon's vertices.
    * @param verty Array containing the y-coordinates of the polygon's vertices.
    * @param testx x-coordinate of the test point.
    * @param testy y-coordinate of the test point.
    * @return true: point in polygon. false: point outside polygon.
-   * Note: Conditionals within are quite expensive. Rule out trivial cases with bounding box checks before call.
+   * Note: Conditionals within are quite expensive. Rule out trivial cases with bounding box checks
+   * before call.
    */
-  template<typename T1, typename T2, typename T3>
+  template <typename T1, typename T2, typename T3>
   bool pnpoly(const T1& nvert, const T2* vertx, const T2* verty, const T3& testx, const T3& testy)
   {
     T1 i, j;
     bool c = false;
-    for (i = 0, j = nvert - 1; i < nvert; j = i++) {
+    for (i = 0, j = nvert - 1; i < nvert; j = i++)
+    {
       if (((verty[i] > testy) != (verty[j] > testy)) &&
         (testx < (vertx[j] - vertx[i]) * (testy - verty[i]) / (verty[j] - verty[i]) + vertx[i]))
         c = !c;
@@ -48,25 +52,25 @@ namespace compgeom
     return c;
   }
 
-  template<typename T>
-  inline std::array<T, 3> triCentroid(const std::array<T, 3>& p1, const std::array<T, 3>& p2, const std::array<T, 3>& p3) {
-    return std::array<T, 3>{ {
-        (p1[0] + p2[0] + p3[0]) / T(3),
-          (p1[1] + p2[1] + p3[1]) / T(3),
-          (p1[2] + p2[2] + p3[2]) / T(3)} };
+  template <typename T>
+  inline std::array<T, 3> triCentroid(
+    const std::array<T, 3>& p1, const std::array<T, 3>& p2, const std::array<T, 3>& p3)
+  {
+    return std::array<T, 3>{ { (p1[0] + p2[0] + p3[0]) / T(3), (p1[1] + p2[1] + p3[1]) / T(3),
+      (p1[2] + p2[2] + p3[2]) / T(3) } };
   }
 
   /* >0 for P2 left of the line through P0 to P1
    * =0 for P2 on the line
    * <0 for P2 right of the line
    */
-  template<typename T>
+  template <typename T>
   inline T isLeft(const T& x0, const T& y0, const T& x1, const T& y1, const T& x2, const T& y2)
   {
     return (x1 - x0) * (y2 - y0) - (x2 - x0) * (y1 - y0);
   }
 
-  template<typename T>
+  template <typename T>
   std::vector<std::size_t> sortIndices(const std::vector<T>& vec)
   {
     // initial indices.
@@ -75,17 +79,14 @@ namespace compgeom
 
     // sort with custom comparator.
     std::stable_sort(idx.begin(), idx.end(),
-      [&vec](std::size_t idx1, std::size_t idx2)
-      {
-        return vec[idx1] < vec[idx2];
-      }
-    );
+      [&vec](std::size_t idx1, std::size_t idx2) { return vec[idx1] < vec[idx2]; });
 
     return idx;
   }
 
-  template<typename T>
-  std::vector<std::array<T, 3>> clockWise(const std::vector<std::array<T, 3>>& points, const std::array<T, 3>& center, std::vector<std::size_t>& sortedIndices)
+  template <typename T>
+  std::vector<std::array<T, 3>> clockWise(const std::vector<std::array<T, 3>>& points,
+    const std::array<T, 3>& center, std::vector<std::size_t>& sortedIndices)
   {
     std::vector<T> angles;
     std::vector<std::array<T, 3>> cw;
@@ -105,15 +106,17 @@ namespace compgeom
     return cw;
   }
 
-  template<typename T>
-  std::vector<std::array<T, 3>> clockWise(const std::vector<std::array<T, 3>>& points, const std::array<T, 3>& center)
+  template <typename T>
+  std::vector<std::array<T, 3>> clockWise(
+    const std::vector<std::array<T, 3>>& points, const std::array<T, 3>& center)
   {
     std::vector<std::size_t> sortedIndices;
     return clockWise(points, center, sortedIndices);
   }
 
-  template<typename T>
-  std::vector<std::array<T, 3>> counterClockWise(const std::vector<std::array<T, 3>>& points, const std::array<T, 3>& center, std::vector<std::size_t>& sortedIndices)
+  template <typename T>
+  std::vector<std::array<T, 3>> counterClockWise(const std::vector<std::array<T, 3>>& points,
+    const std::array<T, 3>& center, std::vector<std::size_t>& sortedIndices)
   {
     std::vector<std::array<T, 3>> ccw;
     ccw = clockWise(points, center, sortedIndices);
@@ -122,14 +125,16 @@ namespace compgeom
     return ccw;
   }
 
-  template<typename T>
-  std::vector<std::array<T, 3>> counterClockWise(const std::vector<std::array<T, 3>>& points, const std::array<T, 3>& center)
+  template <typename T>
+  std::vector<std::array<T, 3>> counterClockWise(
+    const std::vector<std::array<T, 3>>& points, const std::array<T, 3>& center)
   {
     std::vector<std::size_t> sortedIndices;
     return counterClockWise(points, center, sortedIndices);
   }
 
-  enum class JunctionType {
+  enum class JunctionType
+  {
     CROSS,
     COINCIDENT,
     INTERSECT,
@@ -137,8 +142,9 @@ namespace compgeom
     SKEW
   };
 
-  template<typename T>
-  const JunctionType intersect(const std::array<T, 3>& p1, const std::array<T, 3>& p2, const std::array<T, 3>& p3, const std::array<T, 3>& p4, std::array<T, 3>& intersectPt)
+  template <typename T>
+  const JunctionType intersect(const std::array<T, 3>& p1, const std::array<T, 3>& p2,
+    const std::array<T, 3>& p3, const std::array<T, 3>& p4, std::array<T, 3>& intersectPt)
   {
     //////////////////////////////////////////////////////////////////////////
     // p1       p4
@@ -169,7 +175,7 @@ namespace compgeom
     // |_                 _|    |_ _|     |_       _|
     //
     // Apply Cramer's rule ..
-    //      (x4 - x3) * (y1 - y3) - (x1 - x3) * (y4 - y3) 
+    //      (x4 - x3) * (y1 - y3) - (x1 - x3) * (y4 - y3)
     // r = ------------------------------------------------
     //      (x2 - x1) * (y4 - y3) - (x4 - x3) * (y2 - y1)
     //
@@ -235,11 +241,13 @@ namespace compgeom
 
     // intersection along line p1---p2
     bool r_gt_0 = !std::signbit(r) && (std::abs(r) - T(0) > eps); // r is positive and r != -0
-    bool r_lt_1 = std::signbit(r - T(1)) && (std::abs(r - T(1)) > eps); // r - 1 is negative and r != 1
+    bool r_lt_1 =
+      std::signbit(r - T(1)) && (std::abs(r - T(1)) > eps); // r - 1 is negative and r != 1
 
     // intersection along line p3---p4
     bool s_gt_0 = !std::signbit(s) && (std::abs(s) - T(0) > eps); // s is positive and s != -0
-    bool s_lt_1 = std::signbit(s - T(1)) && ((std::abs(s - T(1)) > eps)); // s - 1 is negative and s != 1
+    bool s_lt_1 =
+      std::signbit(s - T(1)) && ((std::abs(s - T(1)) > eps)); // s - 1 is negative and s != 1
 
     if ((r_gt_0 && r_lt_1) && (s_gt_0 && s_lt_1)) // 0 < r < 1 && 0 < s < 1 ..
     {
@@ -275,11 +283,12 @@ namespace compgeom
 // anon begin
 namespace
 {
-  const std::vector<std::vector<vtkIdType>> TRIEDGESEGS = { {0, 1}, {1, 2}, {2, 0} };
-  const std::vector<std::pair<vtkIdType, vtkIdType>> TRIEDGES = { {0, 1}, {1, 2}, {2, 0} };
+  const std::vector<std::vector<vtkIdType>> TRIEDGESEGS = { { 0, 1 }, { 1, 2 }, { 2, 0 } };
+  const std::vector<std::pair<vtkIdType, vtkIdType>> TRIEDGES = { { 0, 1 }, { 1, 2 }, { 2, 0 } };
 
-  template<typename LoopsPointsT>
-  struct LoopsMeta {
+  template <typename LoopsPointsT>
+  struct LoopsMeta
+  {
     std::vector<std::array<LoopsPointsT, 3>> coords;
     std::vector<std::pair<vtkIdType, vtkIdType>> edges;
     std::vector<vtkBoundingBox> edgeBboxes, polyBboxes;
@@ -310,25 +319,36 @@ namespace
     }
   };
 
-  template<typename PointsT, typename ScalarsT>
-  struct MeshPointMeta {
+  template <typename PointsT, typename ScalarsT>
+  struct MeshPointMeta
+  {
     MeshPointMeta() {}
-    MeshPointMeta(const std::array<PointsT, 3>& coord_, const ScalarsT& scalar_, const int& isAcquired_, const int& isIntersect_)
-      : coord(coord_), scalar(scalar_), isAcquired(isAcquired_), isIntersect(isIntersect_) {}
+    MeshPointMeta(const std::array<PointsT, 3>& coord_, const ScalarsT& scalar_,
+      const int& isAcquired_, const int& isIntersect_)
+      : coord(coord_)
+      , scalar(scalar_)
+      , isAcquired(isAcquired_)
+      , isIntersect(isIntersect_)
+    {
+    }
     std::array<PointsT, 3> coord;
     ScalarsT scalar;
     int isAcquired;
     int isIntersect;
   };
 
-  template<typename PointsT, typename ScalarsT>
-  struct TriMeta {
-    TriMeta()
-    {
-      discard = false;
-    }
-    TriMeta(const std::array<std::array<PointsT, 3>, 3>& coords_, const std::array<ScalarsT, 3>& scalars_, const std::array<int, 3>& isAcquired_, const std::array<int, 3>& isIntersect_, const std::array<vtkIdType, 3>& verts_)
-      : coords(coords_), scalars(scalars_), isAcquired(isAcquired_), isIntersect(isIntersect_), verts(verts_)
+  template <typename PointsT, typename ScalarsT>
+  struct TriMeta
+  {
+    TriMeta() { discard = false; }
+    TriMeta(const std::array<std::array<PointsT, 3>, 3>& coords_,
+      const std::array<ScalarsT, 3>& scalars_, const std::array<int, 3>& isAcquired_,
+      const std::array<int, 3>& isIntersect_, const std::array<vtkIdType, 3>& verts_)
+      : coords(coords_)
+      , scalars(scalars_)
+      , isAcquired(isAcquired_)
+      , isIntersect(isIntersect_)
+      , verts(verts_)
     {
       for (std::size_t iPt = 0; iPt < 3; ++iPt)
       {
@@ -352,8 +372,9 @@ namespace
     bool discard;
   };
 
-  template<typename PointsT, typename ScalarsT>
-  ScalarsT triInterp(std::array<PointsT, 3>& coord, const std::array<std::array<PointsT, 3>, 3>& coords, const std::array<ScalarsT, 3>& scalars)
+  template <typename PointsT, typename ScalarsT>
+  ScalarsT triInterp(std::array<PointsT, 3>& coord,
+    const std::array<std::array<PointsT, 3>, 3>& coords, const std::array<ScalarsT, 3>& scalars)
   {
     std::array<double, 3> baryCoords;
     std::vector<std::array<double, 2>> triCoords2d(3);
@@ -364,7 +385,8 @@ namespace
         triCoords2d[triVert][iDim] = coords[triVert][iDim];
     }
 
-    vtkTriangle::BarycentricCoords(interpAt.data(), triCoords2d[0].data(), triCoords2d[1].data(), triCoords2d[2].data(), baryCoords.data());
+    vtkTriangle::BarycentricCoords(interpAt.data(), triCoords2d[0].data(), triCoords2d[1].data(),
+      triCoords2d[2].data(), baryCoords.data());
 
     ScalarsT interpScalar = 0;
     ScalarsT barySum = 0;
@@ -380,9 +402,8 @@ namespace
     return interpScalar;
   }
 
-  template<typename PointsT, typename ScalarsT>
-  void extractTriInfo(vtkSmartPointer<vtkDataSet> mesh,
-    const std::vector<vtkIdType>& smIds,
+  template <typename PointsT, typename ScalarsT>
+  void extractTriInfo(vtkSmartPointer<vtkPointSet> mesh, const std::vector<vtkIdType>& smIds,
     const std::vector<MeshPointMeta<PointsT, ScalarsT>>& meshInfo,
     std::vector<TriMeta<PointsT, ScalarsT>>& trisInfo)
   {
@@ -396,7 +417,7 @@ namespace
     {
       if (smIter->GetCellType() != VTK_TRIANGLE)
         continue;
-      vtkSmartPointer<vtkIdList> ptIds = smIter->GetPointIds();
+      vtkIdList* ptIds = smIter->GetPointIds();
 
       for (vtkIdType iPt = 0; iPt < 3; ++iPt)
       {
@@ -410,7 +431,7 @@ namespace
     }
   }
 
-  template<typename PointsT, typename ScalarsT, typename LoopsPointsT>
+  template <typename PointsT, typename ScalarsT, typename LoopsPointsT>
   void discard(TriMeta<PointsT, ScalarsT>& triInfo, const LoopsMeta<LoopsPointsT>& loopsInfo)
   {
     ///> Remove triangles
@@ -429,7 +450,8 @@ namespace
         }
       }
 
-      bool triInsidePoly = compgeom::pnpoly(loopsInfo.xs[iPoly].size(), loopsInfo.xs[iPoly].data(), loopsInfo.ys[iPoly].data(), triCroid[0], triCroid[1]);
+      bool triInsidePoly = compgeom::pnpoly(loopsInfo.xs[iPoly].size(), loopsInfo.xs[iPoly].data(),
+        loopsInfo.ys[iPoly].data(), triCroid[0], triCroid[1]);
 
       if (loopsInfo.insideOut[iPoly] && !triInsidePoly)
         triInfo.discard = true;
@@ -442,16 +464,21 @@ namespace
 
   struct ApplyConstraintImpl
   {
-    ApplyConstraintImpl(vtkSmartPointer<vtkPolyData> mesh_, const vtkIdType& p1_, const vtkIdType& p2_)
-      : mesh(mesh_), p1(p1_), p2(p2_) {}
+    ApplyConstraintImpl(
+      vtkSmartPointer<vtkPolyData> mesh_, const vtkIdType& p1_, const vtkIdType& p2_)
+      : mesh(mesh_)
+      , p1(p1_)
+      , p2(p2_)
+    {
+    }
 
     vtkSmartPointer<vtkPolyData> mesh;
     vtkIdType p1, p2;
 
-    template<typename PtsArrayT>
+    template <typename PtsArrayT>
     void operator()(PtsArrayT* points)
     {
-      //throw std::logic_error("The method or operation is not implemented.");
+      // throw std::logic_error("The method or operation is not implemented.");
 
       using PtsAccess = vtkDataArrayAccessor<PtsArrayT>;
 
@@ -478,27 +505,30 @@ namespace
       bool flipTriFound(false);
       for (vtkIdType iNbr = 0; iNbr < nNbrs; ++iNbr)
       {
-        const vtkIdType* points = nullptr;
+        const vtkIdType* pts = nullptr;
         vtkIdType npts = 0;
-        mesh->GetCellPoints(nbrs[iNbr], npts, points);
+        mesh->GetCellPoints(nbrs[iNbr], npts, pts);
         for (const auto& edge : TRIEDGES)
         {
           std::array<PtsType, 3> pA_, pB_;
-          pointsAccess.Get(points[edge.first], pA_.data());
-          pointsAccess.Get(points[edge.second], pB_.data());
-          PtsType pASide = compgeom::isLeft(pCcoord[0], pCcoord[1], pD_coord[0], pD_coord[1], pA_[0], pA_[1]);
-          PtsType pBSide = compgeom::isLeft(pCcoord[0], pCcoord[1], pD_coord[0], pD_coord[1], pB_[0], pB_[1]);
+          pointsAccess.Get(pts[edge.first], pA_.data());
+          pointsAccess.Get(pts[edge.second], pB_.data());
+          PtsType pASide =
+            compgeom::isLeft(pCcoord[0], pCcoord[1], pD_coord[0], pD_coord[1], pA_[0], pA_[1]);
+          PtsType pBSide =
+            compgeom::isLeft(pCcoord[0], pCcoord[1], pD_coord[0], pD_coord[1], pB_[0], pB_[1]);
           bool sameSide = (pASide >= 0 && pBSide >= 0) || (pASide <= 0 && pBSide <= 0);
           if (!sameSide)
           {
             tri0 = nbrs[iNbr];
-            pA = points[edge.first];
-            pB = points[edge.second];
-            auto cellIds = vtkSmartPointer<vtkIdList>::New();
+            pA = pts[edge.first];
+            pB = pts[edge.second];
+            auto cellIds = vtkIdList::New();
             mesh->GetCellEdgeNeighbors(tri0, pA, pB, cellIds);
             if (!cellIds->GetNumberOfIds()) // shouldn't happen, but eh just to be safe.
               continue;
             tri1 = cellIds->GetId(0);
+            cellIds->Delete();
             flipTriFound = true;
             break;
           }
@@ -526,7 +556,8 @@ namespace
       }
     }
 
-    void EdgeFlip(const vtkIdType& pA, const vtkIdType& pB, const vtkIdType& pC, const vtkIdType& pD, const vtkIdType& triABC, const vtkIdType triABD)
+    void EdgeFlip(const vtkIdType& pA, const vtkIdType& pB, const vtkIdType& pC,
+      const vtkIdType& pD, const vtkIdType& triABC, const vtkIdType triABD)
     {
       mesh->RemoveReferenceToCell(pA, triABC);
       mesh->RemoveReferenceToCell(pB, triABD);
@@ -547,10 +578,11 @@ namespace
   {
   private:
     std::vector<std::array<vtkIdType, 2>> m_Constraints;
-  
+
   public:
     SurfCutterImpl(vtkSmartPointer<vtkPointSet> inMesh_, vtkSmartPointer<vtkPolyData> inLoops_)
-      : inMesh(inMesh_), inLoops(inLoops_)
+      : inMesh(inMesh_)
+      , inLoops(inLoops_)
     {
       scalarsName = "Scalars";
     }
@@ -561,19 +593,15 @@ namespace
     vtkSmartPointer<vtkPolyData> outLoops;
     std::string scalarsName;
 
-    template<typename PointsT, typename ScalarsT>
-    vtkSmartPointer<vtkPolyData> GetSubMesh(const std::vector<MeshPointMeta<PointsT, ScalarsT>>& meshInfo, const std::vector<vtkIdType>& subMeshIds, const std::vector<std::vector<vtkIdType>>& cells)
+    template <typename PointsT, typename ScalarsT>
+    void FillGeometry(vtkIdType numPoints, const std::vector<vtkIdType>& subMeshIds,
+      const std::vector<MeshPointMeta<PointsT, ScalarsT>>& meshInfo,
+      vtkSmartPointer<vtkPolyData> subMesh)
     {
-      auto mesh = vtkSmartPointer<vtkPolyData>::New(); 
-
-      vtkIdType numPoints = subMeshIds.size();
-      if (!numPoints)
-        return mesh;
-
-      auto coords = vtkSmartPointer<vtkAOSDataArrayTemplate<PointsT>>::New();
-      auto scalars = vtkSmartPointer<vtkAOSDataArrayTemplate<ScalarsT>>::New();
-      auto acquisitions = vtkSmartPointer<vtkAOSDataArrayTemplate<int>>::New();
-      auto intesections = vtkSmartPointer<vtkAOSDataArrayTemplate<int>>::New();
+      vtkNew<vtkAOSDataArrayTemplate<PointsT>> coords;
+      vtkNew<vtkAOSDataArrayTemplate<ScalarsT>> scalars;
+      vtkNew<vtkAOSDataArrayTemplate<int>> acquisitions;
+      vtkNew<vtkAOSDataArrayTemplate<int>> intesections;
 
       coords->SetNumberOfComponents(3);
       scalars->SetNumberOfComponents(1);
@@ -601,151 +629,103 @@ namespace
         intesections->SetValue(tupleIdx, meshInfo[ptId].isIntersect);
       }
 
-      auto points = vtkSmartPointer<vtkPoints>::New();
+      vtkNew<vtkPoints> points;
       points->SetData(coords);
-      mesh->SetPoints(points);
-      mesh->GetPointData()->AddArray(scalars);
-      mesh->GetPointData()->AddArray(acquisitions);
-      mesh->GetPointData()->AddArray(intesections);
-      mesh->Allocate(cells.size());
+      subMesh->SetPoints(points);
+      subMesh->GetPointData()->SetScalars(scalars);
+      subMesh->GetPointData()->AddArray(acquisitions);
+      subMesh->GetPointData()->AddArray(intesections);
+    }
 
+    template <typename PointsT, typename ScalarsT>
+    vtkSmartPointer<vtkPolyData> GetSubMesh(
+      const std::vector<MeshPointMeta<PointsT, ScalarsT>>& meshInfo,
+      const std::vector<vtkIdType>& subMeshIds, const std::vector<std::vector<vtkIdType>>& cells)
+    {
+      auto subMesh = vtkSmartPointer<vtkPolyData>::New();
+      vtkIdType numPoints = subMeshIds.size();
+      if (!numPoints)
+        return subMesh;
+
+      FillGeometry(numPoints, subMeshIds, meshInfo, subMesh);
+
+      subMesh->Allocate(cells.size());
       for (const auto& cell : cells)
       {
         auto numIds = static_cast<int>(cell.size());
         VTKCellType cellType;
         switch (numIds)
         {
-        case 2:
-          cellType = VTKCellType::VTK_LINE;
-          break;
-        case 3:
-          cellType = VTKCellType::VTK_TRIANGLE;
-          break;
-        case 4:
-          cellType = VTKCellType::VTK_QUAD;
-          break;
-        default:
-          cellType = VTKCellType::VTK_POLYGON;
-          break;
+          case 2:
+            cellType = VTKCellType::VTK_LINE;
+            break;
+          case 3:
+            cellType = VTKCellType::VTK_TRIANGLE;
+            break;
+          case 4:
+            cellType = VTKCellType::VTK_QUAD;
+            break;
+          default:
+            cellType = VTKCellType::VTK_POLYGON;
+            break;
         }
-        mesh->InsertNextCell(static_cast<int>(cellType), numIds, cell.data());
+        subMesh->InsertNextCell(static_cast<int>(cellType), numIds, cell.data());
       }
-      return mesh;
+      return subMesh;
     }
 
-    template<typename PointsT, typename ScalarsT>
-    void CreateTriMesh(const std::vector<MeshPointMeta<PointsT, ScalarsT>>& meshInfos, const std::vector<TriMeta<PointsT, ScalarsT>>& tris)
+    template <typename PointsT, typename ScalarsT>
+    void CreateTriMesh(const std::vector<MeshPointMeta<PointsT, ScalarsT>>& meshInfo,
+      const std::vector<TriMeta<PointsT, ScalarsT>>& tris)
     {
       outMesh = vtkSmartPointer<vtkPolyData>::New();
+      vtkIdType numPoints = meshInfo.size();
+      if (!numPoints)
+        return;
 
-      vtkIdType numPoints = meshInfos.size();
+      std::vector<vtkIdType> subMeshIds(numPoints);
+      std::iota(subMeshIds.begin(), subMeshIds.end(), 0);
+      FillGeometry(numPoints, subMeshIds, meshInfo, outMesh);
 
-      auto coords = vtkSmartPointer<vtkAOSDataArrayTemplate<PointsT>>::New();
-      auto scalars = vtkSmartPointer<vtkAOSDataArrayTemplate<ScalarsT>>::New();
-      auto acquisitions = vtkSmartPointer<vtkAOSDataArrayTemplate<int>>::New();
-      auto intesections = vtkSmartPointer<vtkAOSDataArrayTemplate<int>>::New();
-
-      coords->SetNumberOfComponents(3);
-      scalars->SetNumberOfComponents(1);
-      acquisitions->SetNumberOfComponents(1);
-      intesections->SetNumberOfComponents(1);
-
-      coords->SetNumberOfTuples(numPoints);
-      scalars->SetNumberOfTuples(numPoints);
-      acquisitions->SetNumberOfTuples(numPoints);
-      intesections->SetNumberOfTuples(numPoints);
-
-      scalars->SetName(scalarsName.c_str());
-      acquisitions->SetName("Acquired");
-      intesections->SetName("Intersected");
-
-      for (vtkIdType tupleIdx = 0; tupleIdx < numPoints; ++tupleIdx)
-      {
-        for (int iDim = 0; iDim < 3; ++iDim)
-          coords->SetTypedComponent(tupleIdx, iDim, meshInfos[tupleIdx].coord[iDim]);
-
-        scalars->SetValue(tupleIdx, meshInfos[tupleIdx].scalar);
-        acquisitions->SetValue(tupleIdx, meshInfos[tupleIdx].isAcquired);
-        intesections->SetValue(tupleIdx, meshInfos[tupleIdx].isIntersect);
-      }
-
-      auto points = vtkSmartPointer<vtkPoints>::New();
-      points->SetData(coords);
-      outMesh->SetPoints(points);
-      outMesh->GetPointData()->SetScalars(scalars);
-      outMesh->GetPointData()->AddArray(acquisitions);
-      outMesh->GetPointData()->AddArray(intesections);
       outMesh->Allocate(tris.size());
-
       for (const auto& tri : tris)
       {
         if (tri.discard)
           continue;
         outMesh->InsertNextCell(VTK_TRIANGLE, 3, tri.verts.data());
       }
-      auto cleanUp = vtkSmartPointer<vtkCleanPolyData>::New();
+      vtkNew<vtkCleanPolyData> cleanUp;
       cleanUp->SetInputData(outMesh);
       cleanUp->PointMergingOn();
       cleanUp->Update();
       outMesh->ShallowCopy(cleanUp->GetOutput());
     }
 
-    template<typename PointsT, typename ScalarsT>
-    void CreateProjectedLoop(const std::vector<MeshPointMeta<PointsT, ScalarsT>>& meshInfos)
+    template <typename PointsT, typename ScalarsT>
+    void CreateProjectedLoop(const std::vector<MeshPointMeta<PointsT, ScalarsT>>& meshInfo)
     {
       outLoops = vtkSmartPointer<vtkPolyData>::New();
+      vtkIdType numPoints = meshInfo.size();
+      if (!numPoints)
+        return;
 
-      vtkIdType numPoints = meshInfos.size();
+      std::vector<vtkIdType> subMeshIds(numPoints);
+      std::iota(subMeshIds.begin(), subMeshIds.end(), 0);
+      FillGeometry(numPoints, subMeshIds, meshInfo, outLoops);
 
-      auto coords = vtkSmartPointer<vtkAOSDataArrayTemplate<PointsT>>::New();
-      auto scalars = vtkSmartPointer<vtkAOSDataArrayTemplate<ScalarsT>>::New();
-      auto acquisitions = vtkSmartPointer<vtkAOSDataArrayTemplate<int>>::New();
-      auto intesections = vtkSmartPointer<vtkAOSDataArrayTemplate<int>>::New();
-
-      coords->SetNumberOfComponents(3);
-      scalars->SetNumberOfComponents(1);
-      acquisitions->SetNumberOfComponents(1);
-      intesections->SetNumberOfComponents(1);
-
-      coords->SetNumberOfTuples(numPoints);
-      scalars->SetNumberOfTuples(numPoints);
-      acquisitions->SetNumberOfTuples(numPoints);
-      intesections->SetNumberOfTuples(numPoints);
-
-      scalars->SetName(scalarsName.c_str());
-      acquisitions->SetName("Acquired");
-      intesections->SetName("Intersected");
-
-      for (vtkIdType tupleIdx = 0; tupleIdx < numPoints; ++tupleIdx)
-      {
-        for (int iDim = 0; iDim < 3; ++iDim)
-          coords->SetTypedComponent(tupleIdx, iDim, meshInfos[tupleIdx].coord[iDim]);
-
-        scalars->SetValue(tupleIdx, meshInfos[tupleIdx].scalar);
-        acquisitions->SetValue(tupleIdx, meshInfos[tupleIdx].isAcquired);
-        intesections->SetValue(tupleIdx, meshInfos[tupleIdx].isIntersect);
-      }
-
-      auto points = vtkSmartPointer<vtkPoints>::New();
-      points->SetData(coords);
-      outLoops->SetPoints(points);
-      outLoops->GetPointData()->SetScalars(scalars);
-      outLoops->GetPointData()->AddArray(acquisitions);
-      outLoops->GetPointData()->AddArray(intesections);
       outLoops->Allocate(m_Constraints.size());
-
       for (const auto& edge : m_Constraints)
       {
         outLoops->InsertNextCell(VTK_LINE, 2, edge.data());
       }
-      auto cleanUp = vtkSmartPointer<vtkCleanPolyData>::New();
+      vtkNew<vtkCleanPolyData> cleanUp;
       cleanUp->SetInputData(outLoops);
       cleanUp->PointMergingOn();
       cleanUp->Update();
       outLoops->ShallowCopy(cleanUp->GetOutput());
     }
 
-    template<typename PointsArrT1, typename ScalarsArrT, typename PointsArrT2>
+    template <typename PointsArrT1, typename ScalarsArrT, typename PointsArrT2>
     void operator()(PointsArrT1* meshPts, ScalarsArrT* scalars, PointsArrT2* loopsPts)
     {
       const vtkIdType& numLoops = inLoops->GetNumberOfCells();
@@ -766,20 +746,21 @@ namespace
       if (!numPoints2)
         return;
 
-      auto insideOuts = vtkAOSDataArrayTemplate<int>::FastDownCast(inLoops->GetCellData()->GetArray("InsideOuts"));
+      auto insideOuts =
+        vtkAOSDataArrayTemplate<int>::FastDownCast(inLoops->GetCellData()->GetArray("InsideOuts"));
       if (!insideOuts)
         return;
 
       scalarsName = scalars->GetName();
-      m_Constraints.reserve(numLoops * (numPoints2 + 1)); // no. of intersections, a rough estimate 
+      m_Constraints.reserve(numLoops * (numPoints2 + 1)); // no. of intersections, a rough estimate
 
-      auto acquisitions = vtkSmartPointer<vtkAOSDataArrayTemplate<int>>::New();
+      vtkNew<vtkAOSDataArrayTemplate<int>> acquisitions;
       acquisitions->SetNumberOfComponents(1);
       acquisitions->SetNumberOfTuples(numPoints1);
       acquisitions->SetName("Acquired");
       acquisitions->FillValue(0);
 
-      auto intersections = vtkSmartPointer<vtkAOSDataArrayTemplate<int>>::New();
+      vtkNew<vtkAOSDataArrayTemplate<int>> intersections;
       intersections->SetNumberOfComponents(1);
       intersections->SetNumberOfTuples(numPoints1);
       intersections->SetName("Intersected");
@@ -817,9 +798,10 @@ namespace
 
       auto polysIter = vtk::TakeSmartPointer(inLoops->NewCellIterator());
       vtkIdType iPoly(0);
-      for (polysIter->InitTraversal(); !polysIter->IsDoneWithTraversal(); polysIter->GoToNextCell(), ++iPoly)
+      for (polysIter->InitTraversal(); !polysIter->IsDoneWithTraversal();
+           polysIter->GoToNextCell(), ++iPoly)
       {
-        vtkSmartPointer<vtkIdList> ptIds = polysIter->GetPointIds();
+        vtkIdList* ptIds = polysIter->GetPointIds();
         const vtkIdType& numIds = ptIds->GetNumberOfIds();
         std::vector<PointsT2> _xs(numIds), _ys(numIds);
         std::vector<std::array<PointsT2, 3>> poly(numIds);
@@ -861,7 +843,8 @@ namespace
       for (const auto& coord : loopsInfo.coords)
       {
         std::array<PointsT1, 3> newCoord;
-        std::transform(coord.begin(), coord.end(), newCoord.begin(), [&](const auto& val) {return static_cast<PointsT1>(val); });
+        std::transform(coord.begin(), coord.end(), newCoord.begin(),
+          [&](const auto& val) { return static_cast<PointsT1>(val); });
         loopsCoords.emplace_back(newCoord);
       }
 
@@ -880,7 +863,8 @@ namespace
       }
       trisInfo.reserve(numCells);
       extractTriInfo(inMesh, triPtIds, meshInfo, trisInfo);
-      // 3 new triangles per loop's point, 3 new intersection points per triangle, 3 new intersection points for edge.
+      // 3 new triangles per loop's point, 3 new intersection points per triangle, 3 new
+      // intersection points for edge.
       meshInfo.reserve(meshInfo.size() + numPoints2 * 3 * 3 * 3);
       // same as meshInfo, further 3 sub triangles per each new triangle.
       trisInfo.reserve(trisInfo.size() + numPoints2 * 3 * 3 * 3 * 3);
@@ -895,7 +879,7 @@ namespace
       // add new tris.
       // remove inside/outside.
 
-      ///> A The sub-mesh after interpolation might consist of 
+      ///> A The sub-mesh after interpolation might consist of
       /// 1. the actual triangle.
       /// 2. all loops' points that are enclosed by that triangle.
       const std::size_t& nTris1 = trisInfo.size();
@@ -921,8 +905,10 @@ namespace
             // check corners.
             for (std::size_t triVert = 0; triVert < 3; ++triVert)
             {
-              bool xSimilar = std::abs(triInfo.xs[triVert] - coord[0]) <= std::numeric_limits<float>::epsilon();
-              bool ySimilar = std::abs(triInfo.ys[triVert] - coord[1]) <= std::numeric_limits<float>::epsilon();
+              bool xSimilar =
+                std::abs(triInfo.xs[triVert] - coord[0]) <= std::numeric_limits<float>::epsilon();
+              bool ySimilar =
+                std::abs(triInfo.ys[triVert] - coord[1]) <= std::numeric_limits<float>::epsilon();
               if (xSimilar && ySimilar)
               {
                 acquisitions->SetValue(triInfo.verts[triVert], 1);
@@ -933,7 +919,8 @@ namespace
           }
 
           ///> Fastest and sensible interpolation using bary centric coords.
-          ScalarsT newScalar = triInterp<PointsT1, ScalarsT>(coord, triInfo.coords, triInfo.scalars);
+          ScalarsT newScalar =
+            triInterp<PointsT1, ScalarsT>(coord, triInfo.coords, triInfo.scalars);
 
           smIds.emplace_back(meshInfo.size());
           meshInfo.emplace_back(coord, newScalar, 1, 1);
@@ -943,14 +930,15 @@ namespace
         {
           triInfo.discard = true;
           // setup constraints.
-          vtkSmartPointer<vtkPolyData> subMesh = GetSubMesh(meshInfo, smIds, TRIEDGESEGS);
+          auto subMesh = GetSubMesh(meshInfo, smIds, TRIEDGESEGS);
           // triangulate with constraints.
-          auto del2d = vtkSmartPointer<vtkDelaunay2D>::New();
+          auto del2d = vtkDelaunay2D::New();
           del2d->SetInputData(subMesh);
           del2d->SetSourceData(subMesh);
           del2d->Update();
           subMesh->ShallowCopy(del2d->GetOutput());
           extractTriInfo(subMesh, smIds, meshInfo, trisInfo);
+          del2d->Delete();
         }
         else
         {
@@ -958,14 +946,14 @@ namespace
         }
       }
 
-      ///> B Now insert loops's edges into triangles. 
+      ///> B Now insert loops's edges into triangles.
       /// 1. Throw loops edges onto triangles and see if any of either intersect.
       /// 2. Triangulate the actual triangle + intersection points.
       /// 3. Identify pairs of intersections as constraints.
       /// 4. Apply constraints on the sub mesh.
       const std::size_t& nTris2 = trisInfo.size();
-      //smIds.swap(std::vector<std::size_t>());
-      smIds.reserve(numLoops * (numPoints2 + 1)); // no. of intersections, a rough estimate 
+      // smIds.swap(std::vector<std::size_t>());
+      smIds.reserve(numLoops * (numPoints2 + 1)); // no. of intersections, a rough estimate
       for (std::size_t iTri = 0; iTri < nTris2; ++iTri)
       {
         TMeta& triInfo = trisInfo[iTri];
@@ -1034,7 +1022,8 @@ namespace
           else if (loopHits.size() == 1)
           {
             const vtkIdType crossedTriEdge = triHitAt[0];
-            const vtkIdType oppositeVtx = (TRIEDGES[crossedTriEdge].second + 1) % 3 ? TRIEDGES[crossedTriEdge].second + 1 : 0;
+            const vtkIdType oppositeVtx =
+              (TRIEDGES[crossedTriEdge].second + 1) % 3 ? TRIEDGES[crossedTriEdge].second + 1 : 0;
             constraints[loopHits[0]] = oppositeVtx;
           }
 
@@ -1050,15 +1039,16 @@ namespace
         {
           smCoords.emplace_back(meshInfo[smId].coord);
         }
-        auto centroid = compgeom::triCentroid(triInfo.coords[0], triInfo.coords[1], triInfo.coords[2]);
+        auto centroid =
+          compgeom::triCentroid(triInfo.coords[0], triInfo.coords[1], triInfo.coords[2]);
         std::vector<std::size_t> ccwIds;
         compgeom::counterClockWise(smCoords, centroid, ccwIds);
         std::vector<std::vector<vtkIdType>> cells;
         cells.emplace_back(std::vector<vtkIdType>(ccwIds.begin(), ccwIds.end()));
 
         // now triangulate (ear-cut) and apply loop edge constraints
-        vtkSmartPointer<vtkPolyData> subMesh = GetSubMesh(meshInfo, smIds, cells);
-        auto newPolys = vtkSmartPointer<vtkCellArray>::New();
+        auto subMesh = GetSubMesh(meshInfo, smIds, cells);
+        auto newPolys = vtkCellArray::New();
         auto poly = vtkPolygon::New();
         auto ptIds = vtkIdList::New();
         // initialize polygon
@@ -1086,6 +1076,7 @@ namespace
         poly->Delete();
         ptIds->Delete();
         subMesh->SetPolys(newPolys);
+        newPolys->Delete();
         subMesh->BuildLinks();
         for (const auto& constraint : constraints)
         {
@@ -1093,7 +1084,8 @@ namespace
           while (!subMesh->IsEdge(constraint.first, constraint.second))
           {
             using dispatcher = vtkArrayDispatch::DispatchByValueType<vtkArrayDispatch::Reals>;
-            auto constraintWorker = ApplyConstraintImpl(subMesh, constraint.first, constraint.second);
+            auto constraintWorker =
+              ApplyConstraintImpl(subMesh, constraint.first, constraint.second);
             vtkDataArray* points = subMesh->GetPoints()->GetData();
             if (!dispatcher::Execute(points, constraintWorker))
             {
@@ -1106,7 +1098,8 @@ namespace
               break;
             }
           }
-          m_Constraints.emplace_back(std::array<vtkIdType, 2>({ smIds[constraint.first], smIds[constraint.second] }));
+          m_Constraints.emplace_back(
+            std::array<vtkIdType, 2>({ smIds[constraint.first], smIds[constraint.second] }));
         }
 
         const auto& oldSz = trisInfo.size();

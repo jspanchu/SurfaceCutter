@@ -1,0 +1,16 @@
+---
+# This configuration requires clang-format 8.0 or higher.
+BasedOnStyle: Mozilla
+AlignAfterOpenBracket: DontAlign
+AlignTrailingComments: true
+AlignOperands: false
+AlwaysBreakAfterReturnType: None
+AlwaysBreakAfterDefinitionReturnType: None
+BreakBeforeBraces: Allman
+BinPackArguments: true
+BinPackParameters: true
+ColumnLimit: 100
+NamespaceIndentation: All
+SpaceAfterTemplateKeyword: true
+Standard: Cpp11
+...
