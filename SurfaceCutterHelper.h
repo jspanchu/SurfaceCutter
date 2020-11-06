@@ -386,7 +386,7 @@ namespace
     const std::vector<MeshPointMeta<PointsT, ScalarsT>>& meshInfo,
     std::vector<TriMeta<PointsT, ScalarsT>>& trisInfo)
   {
-    auto smIter = mesh->NewCellIterator();
+    auto smIter = vtk::TakeSmartPointer(mesh->NewCellIterator());
     std::array<std::array<PointsT, 3>, 3> coords;
     std::array<ScalarsT, 3> scalars;
     std::array<int, 3> isAcquired, isIntersect;
@@ -564,7 +564,7 @@ namespace
     template<typename PointsT, typename ScalarsT>
     vtkSmartPointer<vtkPolyData> GetSubMesh(const std::vector<MeshPointMeta<PointsT, ScalarsT>>& meshInfo, const std::vector<vtkIdType>& subMeshIds, const std::vector<std::vector<vtkIdType>>& cells)
     {
-      auto mesh = vtkSmartPointer<vtkPolyData>::New();
+      auto mesh = vtkSmartPointer<vtkPolyData>::New(); 
 
       vtkIdType numPoints = subMeshIds.size();
       if (!numPoints)
@@ -815,7 +815,7 @@ namespace
         loopsInfo.coords.emplace_back(coord);
       }
 
-      vtkSmartPointer<vtkCellIterator> polysIter = inLoops->NewCellIterator();
+      auto polysIter = vtk::TakeSmartPointer(inLoops->NewCellIterator());
       vtkIdType iPoly(0);
       for (polysIter->InitTraversal(); !polysIter->IsDoneWithTraversal(); polysIter->GoToNextCell(), ++iPoly)
       {

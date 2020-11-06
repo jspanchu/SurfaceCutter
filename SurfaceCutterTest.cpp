@@ -110,8 +110,8 @@ int test_case(const unsigned short& caseIdx, vtkSmartPointer<SurfaceCutter> surf
   const vtkIdType& numTris = surfCut->GetNumberOfPolys();
   assert(numTris == testSurfCut->GetNumberOfCells());
 
-  vtkSmartPointer<vtkCellIterator> iter = surfCut->NewCellIterator();
-  vtkSmartPointer<vtkCellIterator> testIter = testSurfCut->NewCellIterator();
+  auto iter = vtk::TakeSmartPointer(surfCut->NewCellIterator());
+  auto testIter = vtk::TakeSmartPointer(testSurfCut->NewCellIterator());
   for (iter->InitTraversal(), testIter->InitTraversal();
     !iter->IsDoneWithTraversal(), !testIter->IsDoneWithTraversal();
     iter->GoToNextCell(), testIter->GoToNextCell())
