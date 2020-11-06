@@ -141,8 +141,8 @@ int Parse(char** argv, std::string& meshFile, std::string& loopsFile, bool& insi
 int main(int argc, char** argv)
 {
   bool useCookieCutter(false), movable(true), useClipDataSet(false), insideOut(true);
-  std::string meshFile = "data/BigSurface.vtp";
-  std::string loopsFile = "data/TestPolys2.vtp";
+  std::string meshFile = "data/Triangle.vtp";
+  std::string loopsFile = "data/Case5.vtp";
 
   const int invalidArgs =
     Parse(argv, meshFile, loopsFile, insideOut, useCookieCutter, useClipDataSet, movable, argc);
@@ -179,6 +179,7 @@ int main(int argc, char** argv)
 
   vtkNew<vtkTransform> meshTransform;
   vtkNew<vtkTransformFilter> meshTransformer;
+  meshTransform->PostMultiply();
   meshTransformer->SetTransform(meshTransform);
   meshTransformer->SetInputConnection(reader->GetOutputPort());
 
@@ -193,11 +194,18 @@ int main(int argc, char** argv)
   }
   else if (useCookieCutter)
   {
-    // inside out unavailable yet.
     surfCutter = vtkSmartPointer<vtkCookieCutter>::New();
-    surfCutter->SetInputConnection(0, meshTransformer->GetOutputPort());
+    if (has_suffix(meshFile, ".vtu"))
+    {
+      vtkNew<vtkDataSetSurfaceFilter> getSurf;
+      getSurf->SetInputConnection(reader->GetOutputPort());
+      surfCutter->SetInputConnection(0, getSurf->GetOutputPort());
+    }
+    else
+    {
+      surfCutter->SetInputConnection(0, meshTransformer->GetOutputPort());
+    }
     surfCutter->SetInputConnection(1, loopsReader->GetOutputPort());
-    surfCutter->GetInputDataObject(1, 0);
   }
   else if (useClipDataSet)
   {
@@ -218,7 +226,14 @@ int main(int argc, char** argv)
   meshMapper->ScalarVisibilityOn();
 
   vtkNew<vtkDataSetMapper> projLoopsMapper;
-  projLoopsMapper->SetInputConnection(surfCutter->GetOutputPort(1));
+  if (!(useCookieCutter || useClipDataSet))
+  {
+    projLoopsMapper->SetInputConnection(surfCutter->GetOutputPort(1));
+  }
+  else
+  {
+    projLoopsMapper->SetInputConnection(loopsReader->GetOutputPort(0));
+  }
   projLoopsMapper->SetScalarModeToDefault();
   projLoopsMapper->ScalarVisibilityOn();
 
@@ -244,7 +259,7 @@ int main(int argc, char** argv)
   renderer->AddActor(meshActor);
   renderer->AddActor(projLoopsActor);
   renderer->AddActor(polysActor);
-  renderer->SetBackground(1.0, 1.0, 1.0);
+  renderer->SetBackground(0.39, 0.39, 0.39);
 
   vtkNew<vtkRenderWindow> renderWindow;
   renderWindow->SetSize(640, 480);
@@ -263,16 +278,16 @@ int main(int argc, char** argv)
   auto elapsed_seconds =
     std::chrono::duration_cast<std::chrono::milliseconds>(stop_time - start_time);
 
-  vtkSmartPointer<vtkPolyData> mesh, loops;
-  mesh = vtkPolyData::SafeDownCast(meshTransformer->GetInputDataObject(0, 0));
-  loops = vtkPolyData::SafeDownCast(loopsReader->GetOutput());
+  vtkSmartPointer<vtkPointSet> mesh, loops;
+  mesh = vtkPointSet::SafeDownCast(meshTransformer->GetInputDataObject(0, 0));
+  loops = vtkPointSet::SafeDownCast(loopsReader->GetOutput());
   std::cout << "Mesh:- "
             << "\n";
-  std::cout << " Cells : " << mesh->GetNumberOfPolys() << "\n";
+  std::cout << " Cells : " << mesh->GetNumberOfCells() << "\n";
   std::cout << " Points: " << mesh->GetNumberOfPoints() << "\n";
   std::cout << "Loops:- "
             << "\n";
-  std::cout << " Cells : " << loops->GetNumberOfPolys() << "\n";
+  std::cout << " Cells : " << loops->GetNumberOfCells() << "\n";
   std::cout << " Points: " << loops->GetNumberOfPoints() << "\n";
   std::cout << "Elapsed : " << elapsed_seconds.count() << "ms\n";
 
