@@ -1,10 +1,5 @@
 # SurfaceCutter
-Cut portions of a triangulated surface with 2D polygons. Offers control over what portion is to be retained (Inside/Outside).
-It was developed to be as fast as possible and retain arithmetic precision in case of mixed precision datasets.
-
-This could serve as an efficient, almost always precise alternative to VTK's clipping filters in 2D.
-The implementation **does not** support cutting volumes. For reference, take a look at the benchmarks and results..
-
+Cut portions of a triangulated surface with 2D polygons. 
 The loop polygons are assumed to lie in x-y plane.
 
 ### Usage
@@ -113,53 +108,18 @@ Such transformation recomputes the output of the surface cutters every frame.
 An average over a couple 100 frames should tell who's better.
 So, rotate the mesh with 'Z'/'C' and you should be able to reproduce the below results.
 
-# Benchmarks
-![benchmark.png](illustrations/benchmark.png)
 
-[benchmark.html](illustrations/benchmarks.html)
+## Todo:
+- WTF is up with the helper file, is that a computational geometry library of its own?
+- Slim down to use VTK's data strucutres/functions rather than shuffling around STL-vtkIdLists.
+- Abstract away bare necessities into functors and dispatch.
+- Remove helper file. Implement functors in `.cxx` file
 
-[SurfaceCutter](https://github.com/jaswantp/SurfaceCutter) is slightly faster than
-[vtkClipDataSet](https://vtk.org/doc/nightly/html/classvtkClipDataSet.html). 
-The drop at the end begins when none of the *mesh's* triangles intersect with the *loops* edges.
-Perhaps [SurfaceCutter](https://github.com/jaswantp/SurfaceCutter) is faster now because 
-it does bounding box tests and returns immediately. Otherwise, there is no considerable lag during interaction.
-*But*, SurfaceCutter gives precise results in the 2D plane.
-
-Realtime computations can be thrown out the window with [vtkCookieCutter](https://vtk.org/doc/nightly/html/classvtkCookieCutter.html). (Consistently > 1*s*)
-
-## Algorithm deets:
-
-Within the algorithm there are two entities, the *surface* that is to be cut and the *polygons* that cut the surface.
-They are conveniently called *mesh* and *loops* throughout the implementation.
-
-The algorithm is inherently limited to *loops* in the 2D plane (i.e, with normal along *+/-Z*).
-
-* Work with a container of *TriMeta* for performance reasons. (Better than jumping across Points/Scalars array).
-```
-TriMeta
-{
-  bbox;
-  coord {{x0, y0, z0}, {...}, {...}};
-  discard;
-  scalar;
-  verts {v1, v2, v3};
-}
-```
-* Use a container of *TriMeta* as cache and an active workspace for existing and new triangles.
-
-* The *loop's* points are projected into a triangle from the surface.
-(*triangle that contains the point in 2D*). 
-
-* Construct a *subMesh* with the projected point and the triangle which we projected into. This triangle is replaced with the *subMesh* inplace.
-
-* Throw the *edges* of the *loops* onto triangles. Here,
-care is taken to handle precision loss when intersecting edges. Also, the *loop*'s *constraints* are identified in this step.
-I could've used VTK's intersect routines, but they're not robust (work only with double precision), debugging it was a bit troublesome.
-
-* Now, the intersection points are sorted ccw around the centroid and triangulated with an ear-cut method.
-Following that, Flip triangulation's edges to ensure the *loop's* constraints make it to the final result. 
-Here I could've used [vtkDelaunay2D](https://vtk.org/doc/nightly/html/classvtkDelaunay2D.html), but it sometimes got stuck forever in recursive 'CheckEdge'.
-
-* If a triangle lies inside or outside a polygon (depends on the option), set `discard=true`
-
-* At the end, the algorithm collects all triangles that were not *discarded* and creates a new mesh.
+## Todo: detail
+- Stick to vtkPointSetAlgorithm. Always output vtkPolyData (Library only cuts 2D triangular meshes)
+- Extract method that appends inside out array to polys
+- FFS, use `vtkPointData::CopyAllocate()` and `vtkPointData::CopyData()`. Generic, simpler, boosts readability
+- Handle `vtkCellData` (Try)
+- Use `vtkIdList`, `vtkDataArrayRanges` instead of shuffling around stl containers
+- Try to not use `vtkDelaunay2D`.
+- Yet, maintain efficiency demonstrated in `main` branch, if not, strive for better performance.
