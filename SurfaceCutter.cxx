@@ -1136,7 +1136,6 @@ int SurfaceCutter::RequestData(
   SurfCutHelper helper(
     inPd, outPd, outTris, outLines, inCd, outTriCd, outLineCd, this->PointLocator);
   auto cellsIter = vtk::TakeSmartPointer(inCells->NewIterator());
-  double progress(0.0);
   int reportEvery = numCells >> 2;
   for (cellsIter->GoToFirstCell(); !cellsIter->IsDoneWithTraversal(); cellsIter->GoToNextCell())
   {
