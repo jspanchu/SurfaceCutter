@@ -8,7 +8,7 @@
 #include <vtkDataSetMapper.h>
 #include <vtkDataSetSurfaceFilter.h>
 #include <vtkImplicitSelectionLoop.h>
-#include <vtkInteractorStyleTrackballCamera.h>
+#include <vtkInteractorStyleImage.h>
 #include <vtkNamedColors.h>
 #include <vtkNew.h>
 #include <vtkProperty.h>
@@ -19,14 +19,17 @@
 #include <vtkTransformFilter.h>
 #include <vtkUnstructuredGrid.h>
 #include <vtkXMLPolyDataReader.h>
+#include <vtkXMLPolyDataWriter.h>
 #include <vtkXMLUnstructuredGridReader.h>
+
+#include <vtkStaticCellLocator.h>
 
 #include <array>
 #include <chrono>
 #include <iostream>
 
-static double translateSpeed = 0.05;
-static double rotateSpeed = 0.5;
+static double translateSpeed = 0.04;
+static double rotateSpeed = 1.;
 
 static void ShowUsage(const char* appname)
 {
@@ -141,14 +144,16 @@ int Parse(char** argv, std::string& meshFile, std::string& loopsFile, bool& insi
 int main(int argc, char** argv)
 {
   bool useCookieCutter(false), movable(true), useClipDataSet(false), insideOut(true);
-  std::string meshFile = "data/Triangle.vtp";
-  std::string loopsFile = "data/Case5.vtp";
+  std::string meshFile = "data/BigSurface.vtp";
+  std::string loopsFile = "data/TestPolys1.vtp";
 
   const int invalidArgs =
     Parse(argv, meshFile, loopsFile, insideOut, useCookieCutter, useClipDataSet, movable, argc);
 
   if (invalidArgs)
     return EXIT_FAILURE;
+
+  vtkNew<vtkNamedColors> colors;
 
   vtkSmartPointer<vtkXMLUnstructuredDataReader> reader;
 
@@ -181,12 +186,21 @@ int main(int argc, char** argv)
   vtkNew<vtkTransformFilter> meshTransformer;
   meshTransform->PostMultiply();
   meshTransformer->SetTransform(meshTransform);
-  meshTransformer->SetInputConnection(reader->GetOutputPort());
+  if (has_suffix(meshFile, ".vtu"))
+  {
+    vtkNew<vtkDataSetSurfaceFilter> getSurf;
+    getSurf->SetInputConnection(reader->GetOutputPort());
+    meshTransformer->SetInputConnection(0, getSurf->GetOutputPort());
+  }
+  else
+    meshTransformer->SetInputConnection(reader->GetOutputPort());
 
   vtkSmartPointer<vtkAlgorithm> surfCutter;
   if (!(useCookieCutter || useClipDataSet))
   {
     vtkNew<SurfaceCutter> surfCutter_;
+    vtkNew<vtkStaticCellLocator> cellLoc;
+    surfCutter_->SetCellLocator(cellLoc);
     surfCutter_->SetInputConnection(0, meshTransformer->GetOutputPort());
     surfCutter_->SetInputConnection(1, loopsReader->GetOutputPort());
     surfCutter_->SetInsideOut(insideOut);
@@ -195,16 +209,7 @@ int main(int argc, char** argv)
   else if (useCookieCutter)
   {
     surfCutter = vtkSmartPointer<vtkCookieCutter>::New();
-    if (has_suffix(meshFile, ".vtu"))
-    {
-      vtkNew<vtkDataSetSurfaceFilter> getSurf;
-      getSurf->SetInputConnection(reader->GetOutputPort());
-      surfCutter->SetInputConnection(0, getSurf->GetOutputPort());
-    }
-    else
-    {
-      surfCutter->SetInputConnection(0, meshTransformer->GetOutputPort());
-    }
+    surfCutter->SetInputConnection(0, meshTransformer->GetOutputPort());
     surfCutter->SetInputConnection(1, loopsReader->GetOutputPort());
   }
   else if (useClipDataSet)
@@ -221,45 +226,42 @@ int main(int argc, char** argv)
   }
 
   vtkNew<vtkDataSetMapper> meshMapper;
-  meshMapper->SetInputConnection(surfCutter->GetOutputPort(0));
-  meshMapper->SetScalarModeToDefault();
-  meshMapper->ScalarVisibilityOn();
+  meshMapper->SetInputConnection(meshTransformer->GetOutputPort(0));
+  meshMapper->ScalarVisibilityOff();
 
-  vtkNew<vtkDataSetMapper> projLoopsMapper;
-  if (!(useCookieCutter || useClipDataSet))
-  {
-    projLoopsMapper->SetInputConnection(surfCutter->GetOutputPort(1));
-  }
-  else
-  {
-    projLoopsMapper->SetInputConnection(loopsReader->GetOutputPort(0));
-  }
-  projLoopsMapper->SetScalarModeToDefault();
-  projLoopsMapper->ScalarVisibilityOn();
+  vtkNew<vtkDataSetMapper> cutMeshMapper;
+  cutMeshMapper->SetInputConnection(surfCutter->GetOutputPort());
+  cutMeshMapper->SetScalarModeToUseCellData();
+  cutMeshMapper->ScalarVisibilityOn();
 
   vtkNew<vtkDataSetMapper> polysMapper;
   polysMapper->SetInputConnection(loopsReader->GetOutputPort());
 
   vtkNew<vtkActor> meshActor;
-  meshActor->GetProperty()->SetRepresentationToSurface();
-  meshActor->GetProperty()->EdgeVisibilityOn();
   meshActor->SetMapper(meshMapper);
-
-  vtkNew<vtkActor> projLoopsActor;
-  projLoopsActor->GetProperty()->SetRepresentationToWireframe();
-  projLoopsActor->SetMapper(projLoopsMapper);
-  projLoopsActor->GetProperty()->SetLineWidth(4);
+  meshActor->GetProperty()->SetRepresentationToSurface();
+  meshActor->GetProperty()->SetOpacity(0.1);
+  meshActor->GetProperty()->SetColor(colors->GetColor3d("ultramarine").GetData());
+  
+  vtkNew<vtkActor> cutMeshActor;
+  cutMeshActor->SetMapper(cutMeshMapper);
+  cutMeshActor->GetProperty()->SetRepresentationToSurface();
+  //cutMeshActor->GetProperty()->SetEdgeVisibility(true);
+  //cutMeshActor->GetProperty()->SetEdgeColor(colors->GetColor3d("ultramarine_violet").GetData());
+  cutMeshActor->GetProperty()->SetLineWidth(2);
+  cutMeshActor->GetProperty()->SetColor(colors->GetColor3d("white").GetData());
 
   vtkNew<vtkActor> polysActor;
   polysActor->SetMapper(polysMapper);
   polysActor->GetProperty()->SetRepresentationToWireframe();
   polysActor->GetProperty()->SetLineWidth(1);
+  polysActor->GetProperty()->SetColor(colors->GetColor3d("white_smoke").GetData());
 
   vtkNew<vtkRenderer> renderer;
+  renderer->AddActor(cutMeshActor);
   renderer->AddActor(meshActor);
-  renderer->AddActor(projLoopsActor);
   renderer->AddActor(polysActor);
-  renderer->SetBackground(0.39, 0.39, 0.39);
+  renderer->SetBackground(colors->GetColor3d("dim_grey").GetData());
 
   vtkNew<vtkRenderWindow> renderWindow;
   renderWindow->SetSize(640, 480);
@@ -291,7 +293,13 @@ int main(int argc, char** argv)
   std::cout << " Points: " << loops->GetNumberOfPoints() << "\n";
   std::cout << "Elapsed : " << elapsed_seconds.count() << "ms\n";
 
-  vtkNew<vtkInteractorStyleTrackballCamera> istyle;
+  
+  vtkNew<vtkXMLPolyDataWriter> writer;
+  writer->SetFileName("CutMesh.vtp");
+  writer->SetInputConnection(surfCutter->GetOutputPort(0));
+  writer->Write();
+
+  vtkNew<vtkInteractorStyleImage> istyle;
   renderWindowInteractor->SetInteractorStyle(istyle);
   renderWindowInteractor->Initialize();
   renderWindowInteractor->CreateRepeatingTimer(1);
