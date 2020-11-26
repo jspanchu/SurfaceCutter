@@ -2,18 +2,26 @@
  * @class   SurfaceCutter
  * @brief   Cut triangulated surfaces with polygons
  *
- * SurfaceCutter geometrically cuts a triangulated surface.
+ * Cut a triangulated surface with one or more polygons.
  * It differs from vtkClipDataSet which is a Scalar-based clip operation.
  *
- * Loop polygons from the second input port will be embedded onto the surface.
- * After a re-triangulation of triangles that contain an embedded edge,
- * the result triangles will be rejected/accepted if necessary. See SetInsideOut()
- * This is decided with a point-in-polygon test. Even handles situation where 
+ * This filter crops an input vtkPolyData consisting of triangles
+ * with loops specified by a second input containing polygons. 
+ * Note that this filter can handle concave polygons. It only produces triangles
+ * and line segments (which are inherited from given loop's edges)
+ * 
+ * The result triangles will be rejected/accepted if necessary. See SetInsideOut()
+ * This is decided with a point-in-polygon test. It also handles situation where 
  * a polygon's point might coincide with a triangle's edge or a vertex.
  *
  * @note PointData is interpolated to output.
  * CellData is copied over to both constraint lines, new triangles
  *
+ * @warning
+ * The z-values of the input vtkPolyData and the points defining the loops are
+ * assumed to lie at z=constant. In other words, this filter assumes that the data lies
+ * in a plane orthogonal to the z axis.
+ * 
  * @sa
  * vtkClipDataSet vtkClipPolyData
  *
