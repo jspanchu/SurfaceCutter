@@ -1,32 +1,25 @@
 # SurfaceCutter
-Cut portions of a triangulated surface with 2D polygons. 
-The loop polygons are assumed to lie in x-y plane.
+Cut triangulated surfaces with 2D loop polygons.
 
 ### Usage
 ```c++
 #include <SurfaceCutter.h>
 
-auto cutter = vtkSmartPointer<SurfaceCutter>::New();
+vtkNew<SurfaceCutter> cutter;
 
-// xxx: filter that outputs a vtkPolyData/vtkUnstrucutredGrid
+// xxx: filter that outputs a vtkPolyData
 cutter->SetInputConnection(0, xxx->GetOutputPort());
-
 // yyy: filter that outputs a vtkPolyData
 cutter->SetInputConnection(1, yyy->GetOutputPort());
-
-// InsideOutOn: retain surface inside loops. InsideOutOff: retain surface outside loops.
-cutter->InsideOutOn(); // (or) cutter->InsideOutOff(); default is on.
-
-// ColorAcquiredPtsOn: Loop points will be tagged '1'. Remaining points will be tagged 0.
-cutter->ColorAcquiredPtsOn(); // (or) cutter->ColorAcquiredPtsOff(); default is on.
-
-// ColorLoopEdgesOn: Loop edges projected upon surface will be tagged '1'.
-cutter->ColorLoopEdgesOn(); // (or) cutter->ColorLoopEdgesOff(); default is on.
+// remove stuff outside loops.
+cutter->InsideOutOn();
+// Loop points will be tagged '1'. 
+cutter->ColorAcquiredPtsOn();
+// Loop edges projected upon surface will be tagged '1'.
+cutter->ColorLoopEdgesOn();
 
 cutter->Update();
-
 cutMesh = cutter->GetOutput(0); 
-projectedLoops = cutter->GetOutput(1);
 
 ```
 
@@ -102,24 +95,3 @@ Up:   Y+ | Down:  Y-
 Left: X+ | Right: X-
 Z:   CCW | C:     CW (Looking down Z-)
 ```
-
-The *benchmark* offers controls to *translate*/*rotate* the mesh. 
-Such transformation recomputes the output of the surface cutters every frame.
-An average over a couple 100 frames should tell who's better.
-So, rotate the mesh with 'Z'/'C' and you should be able to reproduce the below results.
-
-
-## Todo:
-- WTF is up with the helper file, is that a computational geometry library of its own?
-- Slim down to use VTK's data strucutres/functions rather than shuffling around STL-vtkIdLists.
-- Abstract away bare necessities into functors and dispatch.
-- Remove helper file. Implement functors in `.cxx` file
-
-## Todo: detail
-- Stick to vtkPointSetAlgorithm. Always output vtkPolyData (Library only cuts 2D triangular meshes)
-- Extract method that appends inside out array to polys
-- FFS, use `vtkPointData::CopyAllocate()` and `vtkPointData::CopyData()`. Generic, simpler, boosts readability
-- Handle `vtkCellData` (Try)
-- Use `vtkIdList`, `vtkDataArrayRanges` instead of shuffling around stl containers
-- Try to not use `vtkDelaunay2D`.
-- Yet, maintain efficiency demonstrated in `main` branch, if not, strive for better performance.
