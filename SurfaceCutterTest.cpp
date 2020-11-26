@@ -1,121 +1,131 @@
 #include "SurfaceCutter.h"
 #include <vtkArrayDispatch.h>
+#include <vtkCellData.h>
 #include <vtkCellIterator.h>
 #include <vtkDataArray.h>
 #include <vtkDataArrayAccessor.h>
 #include <vtkIdList.h>
+#include <vtkMultiBlockDataSet.h>
 #include <vtkNew.h>
+#include <vtkPointData.h>
 #include <vtkPolyData.h>
 #include <vtkSmartPointer.h>
-#include <vtkXMLPolyDataReader.h>
+#include <vtkXMLMultiBlockDataReader.h>
 
 #include <array>
 #include <sstream>
 #include <string>
 
-// functor to compare mixed precision point coords.
-struct PointComparator
+using dispatchRR =
+  vtkArrayDispatch::Dispatch2ByValueType<vtkArrayDispatch::Reals, vtkArrayDispatch::Reals>;
+using dispatchAA =
+  vtkArrayDispatch::Dispatch2ByValueType<vtkArrayDispatch::AllTypes, vtkArrayDispatch::AllTypes>;
+
+struct DataArrComparator
 {
-  template <typename PointsArrT1, typename PointsArrT2>
-  void operator()(PointsArrT1* points1, PointsArrT2* points2)
+  template<typename ScalarsArr1T, typename = vtk::detail::EnableIfVtkDataArray<ScalarsArr1T>,
+    typename ScalarsArr2T, typename = vtk::detail::EnableIfVtkDataArray<ScalarsArr2T>>
+  void operator()(ScalarsArr1T* scalarsArr1, ScalarsArr2T* scalarsArr2, bool& success)
   {
-    const vtkIdType& numPts1 = points1->GetNumberOfTuples();
-    const vtkIdType& numPts2 = points2->GetNumberOfTuples();
+    success = false;
 
-    assert(numPts1 == numPts2);
+    vtkIdType nvals(0);
+    if (!(nvals = scalarsArr1->GetNumberOfValues()))
+      return;
 
-    using Points1Acc = vtkDataArrayAccessor<PointsArrT1>;
-    using Points2Acc = vtkDataArrayAccessor<PointsArrT2>;
+    if (nvals != scalarsArr2->GetNumberOfValues())
+      return;
 
-    using Points1T = Points1Acc::APIType;
-    using Points2T = Points2Acc::APIType;
+    auto scalars1 = vtk::DataArrayValueRange(scalarsArr1);
+    auto scalars2 = vtk::DataArrayValueRange(scalarsArr2);
 
-    VTK_ASSUME(points1->GetNumberOfComponents() == 3);
-    VTK_ASSUME(points2->GetNumberOfComponents() == 3);
+    using Scalars1T = vtk::GetAPIType<ScalarsArr1T>;
+    using Scalars2T = vtk::GetAPIType<ScalarsArr2T>;
 
-    Points1Acc points1Acc(points1);
-    Points2Acc points2Acc(points2);
-
-    const vtkIdType& numTuples = numPts1;
-
-    for (vtkIdType tup = 0; tup < numTuples; ++tup)
+    for (vtkIdType val = 0; val < nvals; ++val)
     {
-      std::array<Points1T, 3> p1;
-      points1Acc.Get(tup, p1.data());
-
-      std::array<Points2T, 3> p2;
-      points2Acc.Get(tup, p2.data());
-
-      if (sizeof(Points1T) <= sizeof(Points2T))
+      if (sizeof(Scalars1T) <= sizeof(Scalars2T))
       {
-        constexpr auto eps = std::numeric_limits<Points1T>::epsilon();
-        for (unsigned short iDim = 0; iDim < 3; ++iDim)
-        {
-          assert(p1[iDim] - p2[iDim] <= eps);
-        }
+        constexpr auto eps = std::numeric_limits<Scalars1T>::epsilon();
+        if (scalars1[val] - scalars2[val] > eps)
+          return;
       }
       else
       {
-        constexpr auto eps = std::numeric_limits<Points2T>::epsilon();
-        for (unsigned short iDim = 0; iDim < 3; ++iDim)
-        {
-          assert(p1[iDim] - p2[iDim] <= eps);
-        }
+        constexpr auto eps = std::numeric_limits<Scalars2T>::epsilon();
+        if (scalars1[val] - scalars2[val] > eps)
+          return;
       }
     }
+
+    success = true;
   }
 };
 
-int test_case(
-  const unsigned short& caseIdx, vtkSmartPointer<SurfaceCutter> surfCutter, const bool& insideOut)
+int compare(vtkSmartPointer<vtkPolyData> pdata1, vtkSmartPointer<vtkPolyData> pdata2)
 {
-  std::stringstream caseFname;
-  caseFname << "data/Case" << caseIdx << ".vtp";
 
-  std::stringstream testFname;
-  testFname << "data/TestCase" << caseIdx;
-  if (insideOut)
-    testFname << "InOutTrue.vtp";
-  else
-    testFname << "InOutFalse.vtp";
-
-  vtkNew<vtkXMLPolyDataReader> caseReader;
-  caseReader->SetFileName(caseFname.str().c_str());
-
-  surfCutter->SetInputConnection(1, caseReader->GetOutputPort());
-  surfCutter->SetInsideOut(insideOut);
-  surfCutter->Update();
-
-  vtkNew<vtkPolyData> cutSurface;
-  cutSurface->ShallowCopy(surfCutter->GetOutput());
-
-  vtkNew<vtkPolyData> testCutSurface;
-  vtkNew<vtkXMLPolyDataReader> testCaseReader;
-  testCaseReader->SetFileName(testFname.str().c_str());
-  testCaseReader->Update();
-  testCutSurface->ShallowCopy(testCaseReader->GetOutput());
-
-  using dispatcher =
-    vtkArrayDispatch::Dispatch2ByValueType<vtkArrayDispatch::Reals, vtkArrayDispatch::Reals>;
-
-  if (!(cutSurface->GetPoints() || testCutSurface->GetPoints()))
+  if (!(pdata1->GetPoints() || pdata2->GetPoints()))
   {
     std::cerr << "Unexpected error! Empty point set." << std::endl;
     return EXIT_FAILURE;
   }
 
-  vtkDataArray* points1 = cutSurface->GetPoints()->GetData();
-  vtkDataArray* points2 = testCutSurface->GetPoints()->GetData();
+  vtkDataArray* points1 = pdata1->GetPoints()->GetData();
+  vtkDataArray* points2 = pdata2->GetPoints()->GetData();
 
-  auto comparator = PointComparator();
-  if (!dispatcher::Execute(points1, points2, comparator))
-    comparator(points1, points2);
+  bool success(false);
+  auto comparator = DataArrComparator();
+  if (!dispatchRR::Execute(points1, points2, comparator, success))
+    comparator(points1, points2, success);
 
-  const vtkIdType& numTris = cutSurface->GetNumberOfPolys();
-  assert(numTris == testCutSurface->GetNumberOfCells());
+  if (!success)
+    return EXIT_FAILURE;
 
-  auto iter = vtk::TakeSmartPointer(cutSurface->NewCellIterator());
-  auto testIter = vtk::TakeSmartPointer(testCutSurface->NewCellIterator());
+  int numArrs1 = pdata1->GetPointData()->GetNumberOfArrays();
+  int numArrs2 = pdata2->GetPointData()->GetNumberOfArrays();
+  if (numArrs1 != numArrs2)
+    return EXIT_FAILURE;
+  for (int iArr = 0; iArr < numArrs1; ++iArr)
+  {
+    success = false;
+    vtkDataArray* arr1 = pdata1->GetPointData()->GetArray(iArr);
+    vtkDataArray* arr2 = pdata2->GetPointData()->GetArray(iArr);
+
+    if (!dispatchAA::Execute(arr1, arr2, comparator, success))
+      comparator(arr1, arr2, success);
+
+    if (!success)
+      return EXIT_FAILURE;
+  }
+
+  numArrs1 = pdata1->GetCellData()->GetNumberOfArrays();
+  numArrs2 = pdata2->GetCellData()->GetNumberOfArrays();
+  if (numArrs1 != numArrs2)
+    return EXIT_FAILURE;
+  for (int iArr = 0; iArr < numArrs1; ++iArr)
+  {
+    success = false;
+    vtkDataArray* arr1 = pdata1->GetCellData()->GetArray(iArr);
+    vtkDataArray* arr2 = pdata2->GetCellData()->GetArray(iArr);
+
+    if (!dispatchAA::Execute(arr1, arr2, comparator, success))
+      comparator(arr1, arr2, success);
+
+    if (!success)
+      return EXIT_FAILURE;
+  }
+
+  const vtkIdType& numTris = pdata1->GetNumberOfPolys();
+  if (numTris != pdata2->GetNumberOfPolys())
+    return EXIT_FAILURE;
+
+  const vtkIdType& numLines = pdata1->GetNumberOfLines();
+  if (numLines != pdata2->GetNumberOfLines())
+    return EXIT_FAILURE;
+
+  auto iter = vtk::TakeSmartPointer(pdata1->NewCellIterator());
+  auto testIter = vtk::TakeSmartPointer(pdata2->NewCellIterator());
   for (iter->InitTraversal(), testIter->InitTraversal();
        !iter->IsDoneWithTraversal(), !testIter->IsDoneWithTraversal();
        iter->GoToNextCell(), testIter->GoToNextCell())
@@ -123,16 +133,23 @@ int test_case(
     // same cell type
     const int& cellType = iter->GetCellType();
     const int& testCellType = testIter->GetCellType();
-    assert(cellType == testCellType);
+    if (cellType != testCellType)
+      return EXIT_FAILURE;
 
     // same pt ids.
     vtkSmartPointer<vtkIdList> ptIds = iter->GetPointIds();
     vtkSmartPointer<vtkIdList> testPtIds = testIter->GetPointIds();
     const vtkIdType& numPtIds = ptIds->GetNumberOfIds();
     const vtkIdType& numTestPtIds = testPtIds->GetNumberOfIds();
-    assert(numPtIds == numTestPtIds);
+    if (numPtIds != numTestPtIds)
+      return EXIT_FAILURE;
     for (vtkIdType iPtId = 0; iPtId < numPtIds; ++iPtId)
-      assert(ptIds->GetId(iPtId) == testPtIds->GetId(iPtId));
+    {
+      if (ptIds->GetId(iPtId) != testPtIds->GetId(iPtId))
+      {
+        return EXIT_FAILURE;
+      }
+    }
   }
 
   return EXIT_SUCCESS;
@@ -140,17 +157,95 @@ int test_case(
 
 int main()
 {
-  vtkNew<vtkXMLPolyDataReader> reader;
-  reader->SetFileName("data/Triangle.vtp");
-
   vtkNew<SurfaceCutter> surfCutter;
-  surfCutter->SetInputConnection(0, reader->GetOutputPort());
-  for (unsigned short iCase = 1; iCase < 6; ++iCase)
+  vtkNew<vtkPolyData> triangle, loop;
+  vtkNew<vtkPoints> tpoints, lPoints;
+  vtkNew<vtkCellArray> tCell, lCell;
+  vtkNew<vtkXMLMultiBlockDataReader> reader;
+  vtkNew<vtkMultiBlockDataSet> inOutTrueBlks, inOutFalseBlks;
+
+  triangle->SetPoints(tpoints);
+  triangle->SetPolys(tCell);
+  loop->SetPoints(lPoints);
+  loop->SetPolys(lCell);
+
+  surfCutter->SetInputData(0, triangle);
+  surfCutter->SetInputData(1, loop);
+
+  // init triangle
+  tpoints->InsertNextPoint(-1.0, -1.0, 0.0);
+  tpoints->InsertNextPoint(1.0, -1.0, 0.0);
+  tpoints->InsertNextPoint(1.0, 1.0, 0.0);
+  tCell->InsertNextCell({ 0, 1, 2 });
+
+  // data for loops
+  std::vector<std::vector<std::vector<double>>> testPoints = {
+    { { -1.01951801776886, -0.2836509943008423, 0.0 }, { 1.0, -1.0, 0.0 },
+      { 0.3121359944343567, 1.033759951591492, 0.0 } }, // l0
+    { { -1.462092995643616, -1.623507976531982, 0.0 }, { 1.0, -1.0, 0.0 },
+      { -0.5603539943695068, 0.7119830250740051, 0.0 } }, // l1
+    { { -1.18078601360321, -0.6734970211982727, 0.0 },
+      { 1.246237993240356, -1.113623976707458, 0.0 },
+      { 0.5600630044937134, 1.047474980354309, 0.0 } }, // l2
+    { { -1.463358998298645, -0.5595560073852539, 0.0 },
+      { 1.770364999771118, -0.001563000027090311, 0.0 },
+      { -1.454408049583435, 0.591713011264801, 0.0 } }, // l3
+    { { 1.770364999771118, -0.001563000027090311, 0.0 },
+      { -2.11070704460144, 0.541579008102417, 0.0 },
+      { 0.8609480261802673, -1.524399995803833, 0.0 },
+      { -0.4971419870853424, -0.04454400017857552, 0.0 } },      // l4
+    { { 1.0, 0.0, 0.0 }, { 0.0, -1.0, 0.0 }, { 0.0, 0.0, 0.0 } } // l5
+  };
+  std::vector<std::vector<vtkIdType>> testPolys = { { 0, 1, 2 }, { 0, 1, 2 }, { 0, 1, 2 },
+    { 0, 1, 2 }, { 0, 1, 2, 3 }, { 0, 1, 2 } };
+
+  reader->SetFileName("data/InOutTrue.vtm");
+  reader->Update();
+  inOutTrueBlks->ShallowCopy(reader->GetOutput());
+  for (unsigned short i = 0; i < 6; ++i)
   {
-    if (test_case(iCase, surfCutter, true))
+    lPoints->Reset();
+    lCell->Reset();
+    for (const auto& point : testPoints[i])
+    {
+      lPoints->InsertNextPoint(point.data());
+    }
+    lCell->InsertNextCell(testPolys[i].size(), testPolys[i].data());
+    surfCutter->Update();
+
+    vtkSmartPointer<vtkPolyData> cut = surfCutter->GetOutput();
+    vtkSmartPointer<vtkPolyData> test = vtkPolyData::SafeDownCast(inOutTrueBlks->GetBlock(i));
+
+    if (compare(cut, test) == EXIT_FAILURE)
       return EXIT_FAILURE;
-    if (test_case(iCase, surfCutter, false))
-      return EXIT_FAILURE;
+
+    std::cout << "InsideOut: True | Test " << i << ": Passed\n";
   }
+
+  surfCutter->SetInsideOut(false);
+
+  reader->SetFileName("data/InOutFalse.vtm");
+  reader->Update();
+  inOutFalseBlks->ShallowCopy(reader->GetOutput());
+  for (unsigned short i = 0; i < 6; ++i)
+  {
+    lPoints->Reset();
+    lCell->Reset();
+    for (const auto& point : testPoints[i])
+    {
+      lPoints->InsertNextPoint(point.data());
+    }
+    lCell->InsertNextCell(testPolys[i].size(), testPolys[i].data());
+    surfCutter->Update();
+
+    vtkSmartPointer<vtkPolyData> cut = surfCutter->GetOutput();
+    vtkSmartPointer<vtkPolyData> test = vtkPolyData::SafeDownCast(inOutFalseBlks->GetBlock(i));
+
+    if (compare(cut, test) == EXIT_FAILURE)
+      return EXIT_FAILURE;
+    
+    std::cout << "InsideOut: False| Test " << i << ": Passed\n";
+  }
+
   return EXIT_SUCCESS;
 }
