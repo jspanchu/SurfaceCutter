@@ -85,7 +85,7 @@ public:
 
   //@{
   /**
-   * Any subclass of vtkAbstractCellLocator that implements the method 'FindCellsWithinBounds()'.
+   * Specify a subclass of vtkAbstractCellLocator which implements the method 'FindCellsWithinBounds()'.
    * Ex: vtkStaticCellLocator, vtkCellLocator. Not vtkOBBTree
    */
   vtkSetSmartPointerMacro(CellLocator, vtkAbstractCellLocator);
@@ -94,20 +94,26 @@ public:
 
   //@{
   /**
-   * Any subclass of vtkIncrementalPointLocator. Prefer vtkMergePoints (the default) for faster
-   * execution.
+   * Specify a spatial point locator for merging points. By default, an
+   * instance of vtkMergePoints is used.
    */
   vtkSetSmartPointerMacro(PointLocator, vtkIncrementalPointLocator);
   vtkGetSmartPointerMacro(PointLocator, vtkIncrementalPointLocator);
   //@}
 
   /**
-   * Provide loop polydata (collection of polygons)
+   * Specify the a second vtkPolyData input which defines loops used to cut
+   * the input polygonal data. These loops must be manifold, i.e., do not
+   * self intersect. The loops are defined from the polygons defined in
+   * this second input.
    */
   void SetLoops(vtkPointSet* loops);
 
   /**
-   * Provide loop polydata (collection of polygons)
+   * Specify the a second vtkPolyData input which defines loops used to cut
+   * the input polygonal data. These loops must be manifold, i.e., do not
+   * self intersect. The loops are defined from the polygons defined in
+   * this second input.
    */
   void SetLoopsConnection(vtkAlgorithmOutput* output);
 
