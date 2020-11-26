@@ -45,6 +45,7 @@ public:
    */
   static SurfaceCutter* New();
   vtkTypeMacro(SurfaceCutter, vtkPolyDataAlgorithm);
+  void PrintSelf(ostream& os, vtkIndent indent) override;
 
   //@{
   /**
@@ -116,6 +117,13 @@ public:
    * this second input.
    */
   void SetLoopsConnection(vtkAlgorithmOutput* output);
+  
+  /**
+   * Create default locators. Used to create one when none are specified. 
+   * The point locator is used to merge coincident points.
+   * The cell locator is used to accelerate cell searches. 
+   */
+  void CreateDefaultLocators();
 
 protected:
   SurfaceCutter();

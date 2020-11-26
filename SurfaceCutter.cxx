@@ -43,8 +43,7 @@ SurfaceCutter::SurfaceCutter()
   this->SetNumberOfInputPorts(2);
   this->SetNumberOfOutputPorts(1);
 
-  this->SetInputArrayToProcess(0, 0, 0, vtkDataObject::FIELD_ASSOCIATION_POINTS,
-    vtkDataSetAttributes::AttributeTypes::SCALARS);
+  this->CreateDefaultLocators();
 
   vtkDebugMacro(<< "Initialized " << this->GetClassNameInternal());
 }
@@ -1043,15 +1042,9 @@ int SurfaceCutter::RequestData(
   vtkDebugMacro(<< "XMin: " << outBnds[0] << ", XMax: " << outBnds[1]);
   vtkDebugMacro(<< "YMin: " << outBnds[2] << ", YMax: " << outBnds[3]);
   vtkDebugMacro(<< "ZMin: " << outBnds[4] << ", ZMax: " << outBnds[5]);
+  
+  this->CreateDefaultLocators();
 
-  if (!this->CellLocator)
-  {
-    this->CellLocator = vtkSmartPointer<vtkCellLocator>::New();
-  }
-  if (!this->PointLocator)
-  {
-    this->PointLocator = vtkSmartPointer<vtkMergePoints>::New();
-  }
   this->CellLocator->CacheCellBoundsOn();
   this->CellLocator->SetDataSet(input);
   this->CellLocator->BuildLocator();
@@ -1143,6 +1136,8 @@ int SurfaceCutter::RequestData(
   SurfCutHelper helper(
     inPd, outPd, outTris, outLines, inCd, outTriCd, outLineCd, this->PointLocator);
   auto cellsIter = vtk::TakeSmartPointer(inCells->NewIterator());
+  double progress(0.0);
+  int reportEvery = numCells >> 2;
   for (cellsIter->GoToFirstCell(); !cellsIter->IsDoneWithTraversal(); cellsIter->GoToNextCell())
   {
     const vtkIdType& cellId = cellsIter->GetCurrentCellId();
@@ -1170,6 +1165,9 @@ int SurfaceCutter::RequestData(
     // reject root/child triangles if necessary
     helper.pop(inLoopPts, insideOuts, loopsInf, acquisition);
     helper.reset();
+
+    if (!(cellId % reportEvery))
+      this->UpdateProgress(static_cast<double>(cellId) / numCells);
   }
 
   outPts->Squeeze();
@@ -1214,4 +1212,45 @@ int SurfaceCutter::RequestData(
   }
 
   return 1;
+}
+
+void SurfaceCutter::PrintSelf(ostream& os, vtkIndent indent)
+{
+  this->Superclass::PrintSelf(os, indent);
+
+  os << indent << "ColorAcquiredPts: " << (this->ColorAcquiredPts ? "True" : "False") << "\n";
+  os << indent << "ColorLoopEdges  : " << (this->ColorLoopEdges ? "True" : "False") << "\n";
+  os << indent << "InsideOut: " << (this->InsideOut ? "True" : "False") << "\n";
+  os << indent << "Tolerance: " << this->Tolerance << "\n";
+
+  if (this->CellLocator)
+  {
+    os << indent << "Cell Locator: " << this->CellLocator << "\n";
+    this->CellLocator->PrintSelf(os, indent);
+  }
+  else
+  {
+    os << indent << "Cell Locator: (None)\n";
+  }
+  if (this->PointLocator)
+  {
+    os << indent << "Point Locator: " << this->PointLocator << "\n";
+    this->PointLocator->PrintSelf(os, indent);
+  }
+  else
+  {
+    os << indent << "Point Locator: (None)\n";
+  }
+}
+
+void SurfaceCutter::CreateDefaultLocators()
+{
+  if (!this->CellLocator)
+  {
+    this->CellLocator = vtkSmartPointer<vtkCellLocator>::New();
+  }
+  if (!this->PointLocator)
+  {
+    this->PointLocator = vtkSmartPointer<vtkMergePoints>::New();
+  }
 }
