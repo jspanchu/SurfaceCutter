@@ -1,5 +1,6 @@
 #include "SurfaceCutter.h"
 
+#include <algorithm>
 #include <unordered_map>
 #include <unordered_set>
 #include <utility>
@@ -192,39 +193,39 @@ namespace
     {
       if (std::fabs(1.0 - u) <= tol && closestDist < tol2)
       {
-        std::memcpy(px, segP2, 3 * sizeof(double));
+        std::copy(segP2, segP2 + 3, px);
         return IntersectType::TJunction;
       }
       else if (std::fabs(1.0 - v) <= tol && closestDist < tol2)
       {
-        std::memcpy(px, a2, 3 * sizeof(double));
+        std::copy(a2, a2 + 3, px);
         return IntersectType::TJunction;
       }
 
       if (std::fpclassify(u) == FP_ZERO && closestDist < tol2)
       {
-        std::memcpy(px, segP1, 3 * sizeof(double));
+        std::copy(segP1, segP1 + 3, px);
         return IntersectType::TJunction;
       }
       else if (std::fpclassify(v) == FP_ZERO && closestDist < tol2)
       {
-        std::memcpy(px, a1, 3 * sizeof(double));
+        std::copy(a1, a1 + 3, px);
         return IntersectType::TJunction;
       }
 
       if (std::fabs(u) <= tol && closestDist < tol2)
       {
-        std::memcpy(px, segP1, 3 * sizeof(double));
+        std::copy(segP1, segP1 + 3, px);
         return IntersectType::TJunction;
       }
       else if (std::fabs(v) <= tol && closestDist < tol2)
       {
-        std::memcpy(px, a1, 3 * sizeof(double));
+        std::copy(a1, a1 + 3, px);
         return IntersectType::TJunction;
       }
       else
       {
-        std::memcpy(px, vProj, 3 * sizeof(double));
+        std::copy(vProj, vProj + 3, px);
         return IntersectType::PerfectCross;
       }
     }
@@ -487,7 +488,7 @@ namespace
             {
               if (processed.find(l1) == processed.end())
               {
-                std::memcpy(px, segP1, 3 * sizeof(double));
+                std::copy(segP1, segP1 + 3, px);
                 interpZ(px, p3d[0], p3d[1], p3d[2], bCoords1);
                 inserted = pointsArr1->InsertNextTuple(px);
                 processed[l1] = inserted;
@@ -498,7 +499,7 @@ namespace
             {
               if (processed.find(l2) == processed.end())
               {
-                std::memcpy(px, segP2, 3 * sizeof(double));
+                std::copy(segP2, segP2 + 3, px);
                 interpZ(px, p3d[0], p3d[1], p3d[2], bCoords2);
                 inserted = pointsArr1->InsertNextTuple(px);
                 processed[l2] = inserted;
@@ -517,7 +518,7 @@ namespace
           {
             if (processed.find(l1) == processed.end())
             {
-              std::memcpy(px, segP1, 3 * sizeof(double));
+              std::copy(segP1, segP1 + 3, px);
               interpZ(px, p3d[0], p3d[1], p3d[2], bCoords1);
               inserted = pointsArr1->InsertNextTuple(px);
               processed[l1] = inserted;
@@ -534,7 +535,7 @@ namespace
           {
             if (processed.find(l2) == processed.end())
             {
-              std::memcpy(px, segP2, 3 * sizeof(double));
+              std::copy(segP2, segP2 + 3, px);
               interpZ(px, p3d[0], p3d[1], p3d[2], bCoords2);
               inserted = pointsArr1->InsertNextTuple(px);
               processed[l2] = inserted;
@@ -557,14 +558,14 @@ namespace
           {
             if (processed.find(l1) == processed.end())
             {
-              std::memcpy(px, segP1, 3 * sizeof(double));
+              std::copy(segP1, segP1 + 3, px);
               interpZ(px, p3d[0], p3d[1], p3d[2], bCoords1);
               inserted = pointsArr1->InsertNextTuple(px);
               processed[l1] = inserted;
             }
             if (processed.find(l2) == processed.end())
             {
-              std::memcpy(px, segP2, 3 * sizeof(double));
+              std::copy(segP2, segP2 + 3, px);
               interpZ(px, p3d[0], p3d[1], p3d[2], bCoords2);
               inserted = pointsArr1->InsertNextTuple(px);
               processed[l2] = inserted;
@@ -970,8 +971,8 @@ int SurfaceCutter::RequestData(
   loops->CopyStructure(loops_);
 
   vtkSmartPointer<vtkAOSDataArrayTemplate<int>> insideOuts;
-  //if ((insideOuts = vtkAOSDataArrayTemplate<int>::FastDownCast(
-  //       loops->GetCellData()->GetArray("InsideOuts"))) == nullptr)
+  if ((insideOuts = vtkAOSDataArrayTemplate<int>::FastDownCast(
+         loops->GetCellData()->GetArray("InsideOuts"))) == nullptr)
   {
     vtkDebugMacro(<< "Loop polygons do not have InsideOuts array. Will resort to "
                   << this->GetClassNameInternal() << "::InsideOut = " << this->InsideOut);
