@@ -22,7 +22,7 @@
 #include <vtkPolyData.h>
 #include <vtkSmartPointer.h>
 #include <vtkTriangle.h>
-#include <vtkUnsignedIntArray.h>
+#include <vtkUnsignedCharArray.h>
 
 using dispatchRRI = vtkArrayDispatch::Dispatch3ByValueType<vtkArrayDispatch::Reals,
   vtkArrayDispatch::Reals, vtkArrayDispatch::Integrals>;
@@ -593,7 +593,7 @@ namespace
       const std::unordered_set<vtkIdType>& isAcquired, const SegmentsType& constraints,
       Root& parent, vtkPointData* inPd, vtkPointData* outPd, vtkCellArray* outTris,
       vtkCellArray* outLines, vtkCellData* inCd, vtkCellData* outTriCd, vtkCellData* outLineCd,
-      vtkIncrementalPointLocator* locator, vtkUnsignedIntArray* acquisition)
+      vtkIncrementalPointLocator* locator, vtkUnsignedCharArray* acquisition)
     {
       // throw std::logic_error("The method or operation is not implemented.");
       auto points1 = vtk::DataArrayTupleRange<3>(pointsArr1);
@@ -695,9 +695,9 @@ namespace
             outPd->InterpolatePoint(inPd, newPtId, rootPts, weights);
 
             if (isAcquired.find(pt) != isAcquired.end())
-              acquisition->InsertNextValue(1);
+              acquisition->InsertNextValue('\001');
             else
-              acquisition->InsertNextValue(0);
+              acquisition->InsertNextValue('\000');
           }
           toNewIds[pt] = newPtId;
           outTris->InsertCellPoint(newPtId);
@@ -846,7 +846,7 @@ namespace
 
     void pop(vtkPoints* points, vtkDataArray* insideOuts,
       std::vector<std::pair<vtkBoundingBox, vtkNew<vtkIdList>>>& loopsInf,
-      vtkUnsignedIntArray* acquisition)
+      vtkUnsignedCharArray* acquisition)
     {
       PopTrisImpl worker;
       vtkDataArray* pointsArr1 = parent.repr->Points->GetData();
@@ -1121,7 +1121,7 @@ int SurfaceCutter::RequestData(
     loopsInf[loopId].first = vtkBoundingBox(loopBnds);
   }
 
-  vtkNew<vtkUnsignedIntArray> acquisition;
+  vtkNew<vtkUnsignedCharArray> acquisition;
   acquisition->SetName("Acquired");
   acquisition->SetNumberOfComponents(1);
   acquisition->Allocate(numPts + numLoopPts);
@@ -1195,16 +1195,16 @@ int SurfaceCutter::RequestData(
 
   if (this->ColorLoopEdges)
   {
-    vtkNew<vtkUnsignedIntArray> constrained;
+    vtkNew<vtkUnsignedCharArray> constrained;
     constrained->SetName("Constrained");
     constrained->SetNumberOfComponents(1);
     constrained->SetNumberOfTuples(numOutCells);
 
     for (vtkIdType tupIdx = 0; tupIdx < numLines; ++tupIdx)
-      constrained->SetTypedComponent(tupIdx, 0, 1);
+      constrained->SetTypedComponent(tupIdx, 0, '\001');
 
     for (vtkIdType tupIdx = numLines; tupIdx < numOutCells; ++tupIdx)
-      constrained->SetTypedComponent(tupIdx, 0, 0);
+      constrained->SetTypedComponent(tupIdx, 0, '\000');
 
     outCd->SetScalars(constrained);
   }
