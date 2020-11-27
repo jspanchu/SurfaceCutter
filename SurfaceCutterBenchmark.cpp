@@ -15,6 +15,7 @@
 #include <vtkRenderWindow.h>
 #include <vtkRenderWindowInteractor.h>
 #include <vtkRenderer.h>
+#include <vtkThreshold.h>
 #include <vtkTransform.h>
 #include <vtkTransformFilter.h>
 #include <vtkUnstructuredGrid.h>
@@ -28,8 +29,8 @@
 #include <chrono>
 #include <iostream>
 
-static double translateSpeed = 0.04;
-static double rotateSpeed = 1.;
+static double translateSpeed = 0.1;
+static double rotateSpeed = 0.5;
 
 static void ShowUsage(const char* appname)
 {
@@ -87,10 +88,10 @@ static void KeypressCallbackFunction(
     meshTransform->RotateZ(rotateSpeed);
   else if (key == "c")
     meshTransform->RotateZ(-rotateSpeed);
-  else if (key == "w")
-    meshTransform->Translate(0., 0., translateSpeed);
-  else if (key == "s")
-    meshTransform->Translate(0., 0., -translateSpeed);
+  else if (key == "k")
+    meshTransform->Scale(1.5, 1.5, 1.0);
+  else if (key == "l")
+    meshTransform->Scale(0.5, 0.5, 1.0);
   else if (key == "h")
   {
     ShowControls();
@@ -144,8 +145,8 @@ int Parse(char** argv, std::string& meshFile, std::string& loopsFile, bool& insi
 int main(int argc, char** argv)
 {
   bool useCookieCutter(false), movable(true), useClipDataSet(false), insideOut(true);
-  std::string meshFile = "data/BigSurface.vtp";
-  std::string loopsFile = "data/TestPolys1.vtp";
+  std::string meshFile = "data/Surface.vtp";
+  std::string loopsFile = "data/Case5.vtp";
 
   const int invalidArgs =
     Parse(argv, meshFile, loopsFile, insideOut, useCookieCutter, useClipDataSet, movable, argc);
@@ -156,6 +157,7 @@ int main(int argc, char** argv)
   vtkNew<vtkNamedColors> colors;
 
   vtkSmartPointer<vtkXMLUnstructuredDataReader> reader;
+  vtkNew<vtkThreshold> constraints; // highlight them.
 
   if (has_suffix(meshFile, ".vtp"))
   {
@@ -206,6 +208,9 @@ int main(int argc, char** argv)
     surfCutter_->SetInsideOut(insideOut);
     surfCutter_->Print(std::cout);
     surfCutter = vtkAlgorithm::SafeDownCast(surfCutter_);
+    constraints->SetInputConnection(surfCutter->GetOutputPort());
+    constraints->SetInputArrayToProcess(
+      0, 0, 0, vtkDataObject::FIELD_ASSOCIATION_CELLS, "Constrained");
   }
   else if (useCookieCutter)
   {
@@ -232,8 +237,11 @@ int main(int argc, char** argv)
 
   vtkNew<vtkDataSetMapper> cutMeshMapper;
   cutMeshMapper->SetInputConnection(surfCutter->GetOutputPort());
-  cutMeshMapper->SetScalarModeToUseCellData();
-  cutMeshMapper->ScalarVisibilityOn();
+  cutMeshMapper->ScalarVisibilityOff();
+
+  vtkNew<vtkDataSetMapper> constraintsMapper;
+  constraintsMapper->SetInputConnection(constraints->GetOutputPort());
+  constraintsMapper->ScalarVisibilityOff();
 
   vtkNew<vtkDataSetMapper> polysMapper;
   polysMapper->SetInputConnection(loopsReader->GetOutputPort());
@@ -242,15 +250,20 @@ int main(int argc, char** argv)
   meshActor->SetMapper(meshMapper);
   meshActor->GetProperty()->SetRepresentationToSurface();
   meshActor->GetProperty()->SetOpacity(0.1);
-  meshActor->GetProperty()->SetColor(colors->GetColor3d("ultramarine").GetData());
+  meshActor->GetProperty()->SetColor(colors->GetColor3d("ivory_black").GetData());
   
   vtkNew<vtkActor> cutMeshActor;
   cutMeshActor->SetMapper(cutMeshMapper);
   cutMeshActor->GetProperty()->SetRepresentationToSurface();
-  //cutMeshActor->GetProperty()->SetEdgeVisibility(true);
-  //cutMeshActor->GetProperty()->SetEdgeColor(colors->GetColor3d("ultramarine_violet").GetData());
-  cutMeshActor->GetProperty()->SetLineWidth(2);
+  cutMeshActor->GetProperty()->SetEdgeVisibility(true);
+  cutMeshActor->GetProperty()->SetEdgeColor(colors->GetColor3d("indigo").GetData());
   cutMeshActor->GetProperty()->SetColor(colors->GetColor3d("white").GetData());
+
+  vtkNew<vtkActor> constraintsActor;
+  constraintsActor->SetMapper(constraintsMapper);
+  constraintsActor->GetProperty()->SetRepresentationToSurface();
+  constraintsActor->GetProperty()->SetLineWidth(4);
+  constraintsActor->GetProperty()->SetColor(colors->GetColor3d("cadmium_red_deep").GetData());
 
   vtkNew<vtkActor> polysActor;
   polysActor->SetMapper(polysMapper);
@@ -262,7 +275,8 @@ int main(int argc, char** argv)
   renderer->AddActor(cutMeshActor);
   renderer->AddActor(meshActor);
   renderer->AddActor(polysActor);
-  renderer->SetBackground(colors->GetColor3d("dim_grey").GetData());
+  renderer->AddActor(constraintsActor);
+  renderer->SetBackground(colors->GetColor3d("slate_grey").GetData());
 
   vtkNew<vtkRenderWindow> renderWindow;
   renderWindow->SetSize(640, 480);
