@@ -1,6 +1,7 @@
 #include "SurfaceCutter.h"
 
 #include <algorithm>
+#include <iterator>
 #include <unordered_map>
 #include <unordered_set>
 #include <utility>
@@ -86,7 +87,7 @@ namespace
 
   // Convention: in a triangle- v: vertex, e: edge
   // with vertices v0--v1--v2,
-  // e0 = v0--v1, e1 = v1--v2, e2 = v2--v0; 
+  // e0 = v0--v1, e1 = v1--v2, e2 = v2--v0;
   const vtkIdType TRIEDGES[3][2] = { { 0, 1 }, { 1, 2 }, { 2, 0 } };
   const vtkIdType TRIOPPEDGE[3] = { 1, 2, 0 };  // edge id opposite to a vertex
   const vtkIdType TRIOPPVERTS[3] = { 2, 0, 1 }; // vertex id opposite to an edge
@@ -397,7 +398,7 @@ namespace
     template <typename PointsArr1T, typename = vtk::detail::EnableIfVtkDataArray<PointsArr1T>,
       typename PointsArr2T, typename = vtk::detail::EnableIfVtkDataArray<PointsArr1T>>
     void operator()(PointsArr1T* pointsArr1, PointsArr2T* pointsArr2, const SegmentsType& lines,
-      SegmentsType& constraints, std::unordered_set<vtkIdType>& isAcquired, const double& tol)
+      SegmentsType& constraints, const double& tol)
     {
       if (!lines.size())
         return;
@@ -510,7 +511,7 @@ namespace
         }
         if (hits.size() == 2)
         {
-          constraints.emplace_back(*(hits.begin()), *(--hits.end()));
+          constraints.emplace_back(*(hits.begin()), *(std::next(hits.begin())));
         }
         else if (hits.size() == 1)
         {
@@ -550,10 +551,9 @@ namespace
         else if (!hits.size())
         {
           // the last hope!
-          bool force = (l1Inside && l2Inside) || (l1Inside && l2OnEdge) ||
-            (l1OnEdge && l2Inside) || (l1OnEdge && l2OnEdge) || (l1Inside && l2OnVert) ||
-            (l1OnVert && l2Inside) || (l1OnEdge && l2OnVert) || (l1OnVert && l2OnEdge) ||
-            (l1OnVert && l2OnVert);
+          bool force = (l1Inside && l2Inside) || (l1Inside && l2OnEdge) || (l1OnEdge && l2Inside) ||
+            (l1OnEdge && l2OnEdge) || (l1Inside && l2OnVert) || (l1OnVert && l2Inside) ||
+            (l1OnEdge && l2OnVert) || (l1OnVert && l2OnEdge) || (l1OnVert && l2OnVert);
           if (force)
           {
             if (processed.find(l1) == processed.end())
@@ -646,13 +646,13 @@ namespace
           // the hard-way; default
           bool inside = false;
           vtkIdType nvert(loopPts->GetNumberOfIds());
-          const vtkIdType* pts = loopPts->GetPointer(0);
+          const vtkIdType* loopPtsPtr = loopPts->GetPointer(0);
           for (vtkIdType i = 0, j = nvert - 1; i < nvert; j = i++)
           {
-            const double ix = points2[pts[i]][0];
-            const double iy = points2[pts[i]][1];
-            const double jx = points2[pts[j]][0];
-            const double jy = points2[pts[j]][1];
+            const double ix = points2[loopPtsPtr[i]][0];
+            const double iy = points2[loopPtsPtr[i]][1];
+            const double jx = points2[loopPtsPtr[j]][0];
+            const double jy = points2[loopPtsPtr[j]][1];
 
             if (((iy > testy) != (jy > testy)) &&
               (testx < (jx - ix) * (testy - iy) / (jy - iy) + ix))
@@ -772,7 +772,6 @@ namespace
           const double pj[3] = { points[vj][0], points[vj][1], 0.0 };
 
           double px[3] = {};
-          vtkIdType tFrom(-1);
           const auto intrsctType = robustIntersect(pi, pj, pl, pm, px, tol);
           if (intrsctType != IntersectType::PerfectCross)
             continue;
@@ -890,7 +889,7 @@ namespace
     {
       if (parent.repr->Points->GetNumberOfPoints() > 3)
       {
-        //del2d->SetTolerance(tol);
+        // del2d->SetTolerance(tol);
         del2d->Update();
 
         if (del2d->GetOutput())
@@ -934,15 +933,15 @@ namespace
       vtkPoints* rootPoints = parent.repr->Points;
       vtkDataArray* pointsArr1 = rootPoints->GetData();
       vtkDataArray* pointsArr2 = points->GetData();
-      if (!dispatchRR::Execute(pointsArr1, pointsArr2, worker, lines, constraints, isAcquired, tol))
-        worker(pointsArr1, pointsArr2, lines, constraints, isAcquired, tol);
+      if (!dispatchRR::Execute(pointsArr1, pointsArr2, worker, lines, constraints, tol))
+        worker(pointsArr1, pointsArr2, lines, constraints, tol);
     }
 
     inline void update() { parent.update(tris); }
 
     Root parent;
     SegmentsType constraints;
-    std::unordered_set<vtkIdType> isAcquired; 
+    std::unordered_set<vtkIdType> isAcquired;
     vtkNew<vtkCellArray> tris;
     vtkNew<vtkDelaunay2D> del2d;
     vtkNew<vtkPolyData> in, out;
@@ -965,7 +964,7 @@ int SurfaceCutter::RequestData(
   vtkSmartPointer<vtkPolyData> output = vtkPolyData::GetData(outputVector->GetInformationObject(0));
 
   // we're about to do stuff that is not thread-safe (query bounds, add scalars, ..).
-  // multiple threads might use the same loop polydata for different surfaces, 
+  // multiple threads might use the same loop polydata for different surfaces,
   // so copy bare minimum
   vtkNew<vtkPolyData> loops;
   loops->CopyStructure(loops_);
@@ -1018,7 +1017,6 @@ int SurfaceCutter::RequestData(
 
   vtkDataArray* inPtsArr = inPts->GetData();
   vtkDataArray* inLoopPtsArr = inLoopPts->GetData();
-  vtkDataArray* outPtsArr = outPts->GetData();
 
   double inBounds[6] = {};
   double loopsBnds[6] = {};
@@ -1054,7 +1052,6 @@ int SurfaceCutter::RequestData(
   std::unordered_map<vtkIdType, SegmentsType> canCross;
   std::vector<std::pair<vtkBoundingBox, vtkNew<vtkIdList>>> loopsInf(numLoops);
   vtkNew<vtkIdList> cells;
-  vtkIdType nedges(0);
   GetEdgeBBoxImpl edgeBBoxWorker;
   canCross.reserve(numCells);
   double edgeBnds[6] = {};
@@ -1068,10 +1065,10 @@ int SurfaceCutter::RequestData(
     loopsIter->GetCurrentCell(loopPtIds);
 
     const vtkIdType& nedges = loopPtIds->GetNumberOfIds();
-    for (vtkIdType e = 0; e < nedges; ++e)
+    for (vtkIdType lEdge = 0; lEdge < nedges; ++lEdge)
     {
-      const vtkIdType& i0 = e;
-      const vtkIdType i1 = (e + 1) % nedges ? (e + 1) : 0;
+      const vtkIdType& i0 = lEdge;
+      const vtkIdType i1 = (lEdge + 1) % nedges ? (lEdge + 1) : 0;
       const vtkIdType& e0 = loopPtIds->GetId(i0);
       const vtkIdType& e1 = loopPtIds->GetId(i1);
 
@@ -1094,10 +1091,10 @@ int SurfaceCutter::RequestData(
         const vtkIdType* pts = nullptr;
         vtkIdType npts(0);
         inCells->GetCellAtId(cell, npts, pts);
-        for (const auto& e : TRIEDGES)
+        for (const auto& tEdge : TRIEDGES)
         {
-          const vtkIdType vi = pts[e[0]];
-          const vtkIdType vj = pts[e[1]];
+          const vtkIdType vi = pts[tEdge[0]];
+          const vtkIdType vj = pts[tEdge[1]];
 
           vtkBoundingBox tEdgeBBox;
           if (!dispatchR::Execute(inPtsArr, edgeBBoxWorker, vi, vj, tEdgeBBox))
@@ -1134,7 +1131,8 @@ int SurfaceCutter::RequestData(
   //           2. try to intersect with loops,
   //           3. pop child triangles into output polydata
   //           4. reset helper's data structures to prepare for next triangle.
-  SurfCutHelper helper(inPd, outPd, outTris, outLines, inCd, outTriCd, outLineCd, this->PointLocator);
+  SurfCutHelper helper(
+    inPd, outPd, outTris, outLines, inCd, outTriCd, outLineCd, this->PointLocator);
   auto cellsIter = vtk::TakeSmartPointer(inCells->NewIterator());
   for (cellsIter->GoToFirstCell(); !cellsIter->IsDoneWithTraversal(); cellsIter->GoToNextCell())
   {
