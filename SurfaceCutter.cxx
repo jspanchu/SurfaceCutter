@@ -626,7 +626,6 @@ namespace
       const vtkIdType& numPoints = rootTri->GetPoints()->GetNumberOfPoints();
       auto& children = parent.children;
       const std::size_t numChildren = children.size();
-      const bool childless = (numChildren == 1);
       const vtkIdType& rootId = parent.id;
       std::vector<vtkIdType> toNewIds(numPoints, -1);
 
@@ -703,10 +702,7 @@ namespace
           const double p[3] = { points1[pt][0], points1[pt][1], points1[pt][2] };
           if (locator->InsertUniquePoint(p, newPtId))
           {
-            if (childless) // avoid computation of weights
-              weights[0] = 1.0;
-            else
-              rootTri->EvaluatePosition(p, closest, subId, pCoords, dist2, weights);
+            rootTri->EvaluatePosition(p, closest, subId, pCoords, dist2, weights);
 
             outPd->InterpolatePoint(inPd, newPtId, rootPts, weights);
 
