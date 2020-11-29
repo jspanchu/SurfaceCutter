@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <iterator>
+#include <set>
 #include <unordered_map>
 #include <unordered_set>
 #include <utility>
@@ -29,7 +30,7 @@
 using dispatchRRI = vtkArrayDispatch::Dispatch3ByValueType<vtkArrayDispatch::Reals,
   vtkArrayDispatch::Reals, vtkArrayDispatch::Integrals>;
 using dispatchRR =
-  vtkArrayDispatch::Dispatch2ByValueType<vtkArrayDispatch::Reals, vtkArrayDispatch::Reals>;
+vtkArrayDispatch::Dispatch2ByValueType<vtkArrayDispatch::Reals, vtkArrayDispatch::Reals>;
 using dispatchR = vtkArrayDispatch::DispatchByValueType<vtkArrayDispatch::Reals>;
 
 using SegmentsType = std::vector<std::pair<vtkIdType, vtkIdType>>; // {{p1, p2}, {p2, p3}, ...}
@@ -378,7 +379,7 @@ namespace
     // pointsArr2: root triangle points
     template <typename PointsArr1T, typename = vtk::detail::EnableIfVtkDataArray<PointsArr1T>,
       typename PointsArr2T, typename = vtk::detail::EnableIfVtkDataArray<PointsArr2T>>
-    void operator()(PointsArr1T* pointsArr1, PointsArr2T* pointsArr2, vtkIdList* rootVerts)
+      void operator()(PointsArr1T* pointsArr1, PointsArr2T* pointsArr2, vtkIdList* rootVerts)
     {
       auto points1 = vtk::DataArrayTupleRange<3>(pointsArr1);
       auto points2 = vtk::DataArrayTupleRange<3>(pointsArr2);
@@ -397,8 +398,8 @@ namespace
     // pointsArr2: line points
     template <typename PointsArr1T, typename = vtk::detail::EnableIfVtkDataArray<PointsArr1T>,
       typename PointsArr2T, typename = vtk::detail::EnableIfVtkDataArray<PointsArr1T>>
-    void operator()(PointsArr1T* pointsArr1, PointsArr2T* pointsArr2, const SegmentsType& lines,
-      SegmentsType& constraints, const double& tol)
+      void operator()(PointsArr1T* pointsArr1, PointsArr2T* pointsArr2, const SegmentsType& lines,
+        SegmentsType& constraints, std::unordered_set<vtkIdType>& isAcquired, const double& tol)
     {
       if (!lines.size())
         return;
@@ -449,7 +450,7 @@ namespace
         const bool l2Outsid = l2Pos == BaryCentricType::Outside;
 
         double px[3] = {};
-        std::unordered_set<vtkIdType> hits;
+        std::set<vtkIdType> hits;
         vtkIdType inserted(-1);
 
         for (const auto& e : TRIEDGES)
@@ -484,6 +485,12 @@ namespace
             if (tgt >= 0 && minDist <= tol2)
             {
               hits.insert(tgt);
+              double dist2p1 = vtkMath::Distance2BetweenPoints(p2d[tgt], segP1);
+              double dist2p2 = vtkMath::Distance2BetweenPoints(p2d[tgt], segP2);
+              if (dist2p1 < tol2)
+                isAcquired.insert(tgt);
+              else if (dist2p2 < tol2)
+                isAcquired.insert(tgt);
             }
             else if (l1OnEdge)
             {
@@ -494,6 +501,7 @@ namespace
                 inserted = pointsArr1->InsertNextTuple(px);
                 processed[l1] = inserted;
                 hits.insert(inserted);
+                isAcquired.insert(inserted);
               }
             }
             else if (l2OnEdge)
@@ -505,6 +513,7 @@ namespace
                 inserted = pointsArr1->InsertNextTuple(px);
                 processed[l2] = inserted;
                 hits.insert(inserted);
+                isAcquired.insert(inserted);
               }
             }
           }
@@ -524,12 +533,14 @@ namespace
               inserted = pointsArr1->InsertNextTuple(px);
               processed[l1] = inserted;
             }
-            constraints.emplace_back(*(hits.begin()), processed.at(l1));
+            constraints.emplace_back(*(hits.begin()), processed[l1]);
+            isAcquired.insert(processed[l1]);
           }
           else if (l1OnVert)
           {
             processed[l1] = l1v;
             constraints.emplace_back(*(hits.begin()), l1v);
+            isAcquired.insert(l1v);
           }
 
           if (l2Inside || l2OnEdge)
@@ -541,11 +552,14 @@ namespace
               inserted = pointsArr1->InsertNextTuple(px);
               processed[l2] = inserted;
             }
-            constraints.emplace_back(*(hits.begin()), processed.at(l2));
+            constraints.emplace_back(*(hits.begin()), processed[l2]);
+            isAcquired.insert(processed[l2]);
           }
           else if (l2OnVert)
           {
+            processed[l2] = l2v;
             constraints.emplace_back(*(hits.begin()), l2v);
+            isAcquired.insert(l2v);
           }
         }
         else if (!hits.size())
@@ -571,6 +585,8 @@ namespace
               processed[l2] = inserted;
             }
             constraints.emplace_back(processed[l1], processed[l2]);
+            isAcquired.insert(processed[l1]);
+            isAcquired.insert(processed[l2]);
           }
         }
       }
@@ -589,12 +605,12 @@ namespace
     template <typename PointsArr1T, typename = vtk::detail::EnableIfVtkDataArray<PointsArr1T>,
       typename PointsArr2T, typename = vtk::detail::EnableIfVtkDataArray<PointsArr2T>,
       typename InOutsArrT, typename = vtk::detail::EnableIfVtkDataArray<InOutsArrT>>
-    void operator()(PointsArr1T* pointsArr1, PointsArr2T* pointsArr2, InOutsArrT* inOutsArr,
-      std::vector<std::pair<vtkBoundingBox, vtkNew<vtkIdList>>>& loops,
-      const std::unordered_set<vtkIdType>& isAcquired, const SegmentsType& constraints,
-      Root& parent, vtkPointData* inPd, vtkPointData* outPd, vtkCellArray* outTris,
-      vtkCellArray* outLines, vtkCellData* inCd, vtkCellData* outTriCd, vtkCellData* outLineCd,
-      vtkIncrementalPointLocator* locator, vtkUnsignedCharArray* acquisition)
+      void operator()(PointsArr1T* pointsArr1, PointsArr2T* pointsArr2, InOutsArrT* inOutsArr,
+        std::vector<std::pair<vtkBoundingBox, vtkNew<vtkIdList>>>& loops,
+        const std::unordered_set<vtkIdType>& isAcquired, const SegmentsType& constraints, Root& parent,
+        vtkPointData* inPd, vtkPointData* outPd, vtkCellArray* outTris, vtkCellArray* outLines,
+        vtkCellData* inCd, vtkCellData* outTriCd, vtkCellData* outLineCd,
+        vtkIncrementalPointLocator* locator, vtkUnsignedCharArray* acquisition)
     {
       // throw std::logic_error("The method or operation is not implemented.");
       auto points1 = vtk::DataArrayTupleRange<3>(pointsArr1);
@@ -654,8 +670,7 @@ namespace
             const double jx = points2[loopPtsPtr[j]][0];
             const double jy = points2[loopPtsPtr[j]][1];
 
-            if (((iy > testy) != (jy > testy)) &&
-              (testx < (jx - ix) * (testy - iy) / (jy - iy) + ix))
+            if (((iy > testy) != (jy > testy)) && (testx < (jx - ix) * (testy - iy) / (jy - iy) + ix))
               inside = !inside;
           }
 
@@ -852,8 +867,8 @@ namespace
       vtkDataArray* pointsArr1 = parent.repr->Points->GetData();
       vtkDataArray* pointsArr2 = points->GetData();
       if (!dispatchRRI::Execute(pointsArr1, pointsArr2, insideOuts, worker, loopsInf, isAcquired,
-            constraints, parent, inPd, outPd, outTris, outLines, inCd, outTriCd, outLineCd, locator,
-            acquisition))
+        constraints, parent, inPd, outPd, outTris, outLines, inCd, outTriCd, outLineCd, locator,
+        acquisition))
         worker(pointsArr1, pointsArr2, insideOuts, loopsInf, isAcquired, constraints, parent, inPd,
           outPd, outTris, outLines, inCd, outTriCd, outLineCd, locator, acquisition);
     }
@@ -933,8 +948,8 @@ namespace
       vtkPoints* rootPoints = parent.repr->Points;
       vtkDataArray* pointsArr1 = rootPoints->GetData();
       vtkDataArray* pointsArr2 = points->GetData();
-      if (!dispatchRR::Execute(pointsArr1, pointsArr2, worker, lines, constraints, tol))
-        worker(pointsArr1, pointsArr2, lines, constraints, tol);
+      if (!dispatchRR::Execute(pointsArr1, pointsArr2, worker, lines, constraints, isAcquired, tol))
+        worker(pointsArr1, pointsArr2, lines, constraints, isAcquired, tol);
     }
 
     inline void update() { parent.update(tris); }
@@ -945,16 +960,15 @@ namespace
     vtkNew<vtkCellArray> tris;
     vtkNew<vtkDelaunay2D> del2d;
     vtkNew<vtkPolyData> in, out;
-    vtkCellArray *outTris, *outLines;
-    vtkCellData *inCd, *outTriCd, *outLineCd;
+    vtkCellArray* outTris, * outLines;
+    vtkCellData* inCd, * outTriCd, * outLineCd;
     vtkIncrementalPointLocator* locator;
-    vtkPointData *inPd, *outPd;
+    vtkPointData* inPd, * outPd;
   };
 }
 // anon end
-
-int SurfaceCutter::RequestData(
-  vtkInformation* request, vtkInformationVector** inputVector, vtkInformationVector* outputVector)
+int SurfaceCutter::RequestData(vtkInformation* vtkNotUsed(request),
+  vtkInformationVector** inputVector, vtkInformationVector* outputVector)
 {
   vtkSmartPointer<vtkPolyData> input =
     vtkPolyData::GetData(inputVector[0]->GetInformationObject(0));
@@ -971,10 +985,10 @@ int SurfaceCutter::RequestData(
 
   vtkSmartPointer<vtkAOSDataArrayTemplate<int>> insideOuts;
   if ((insideOuts = vtkAOSDataArrayTemplate<int>::FastDownCast(
-         loops->GetCellData()->GetArray("InsideOuts"))) == nullptr)
+    loops_->GetCellData()->GetArray("InsideOuts"))) == nullptr)
   {
     vtkDebugMacro(<< "Loop polygons do not have InsideOuts array. Will resort to "
-                  << this->GetClassNameInternal() << "::InsideOut = " << this->InsideOut);
+      << this->GetClassNameInternal() << "::InsideOut = " << this->InsideOut);
     insideOuts = vtkSmartPointer<vtkAOSDataArrayTemplate<int>>::New();
     insideOuts->SetNumberOfComponents(1);
     insideOuts->SetNumberOfTuples(loops->GetNumberOfPolys());
@@ -1143,7 +1157,7 @@ int SurfaceCutter::RequestData(
     cellsIter->GetCurrentCell(npts, pts);
     if (npts != 3)
       vtkWarningMacro(<< "Cannot operate on cell with " << npts << " points"
-                      << ". Please use vtkTriangleFilter first.");
+        << ". Please use vtkTriangleFilter first.");
 
     // provide
     helper.push(inPts, pts, pts + 1, pts + 2, cellId);

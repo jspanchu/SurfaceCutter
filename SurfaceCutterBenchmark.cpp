@@ -16,6 +16,7 @@
 #include <vtkRenderWindowInteractor.h>
 #include <vtkRenderer.h>
 #include <vtkThreshold.h>
+#include <vtkThresholdPoints.h>
 #include <vtkTransform.h>
 #include <vtkTransformFilter.h>
 #include <vtkUnstructuredGrid.h>
@@ -146,7 +147,7 @@ int main(int argc, char** argv)
 {
   bool useCookieCutter(false), movable(true), useClipDataSet(false), insideOut(true);
   std::string meshFile = "data/Triangle.vtp";
-  std::string loopsFile = "data/Case6.vtp";
+  std::string loopsFile = "data/Case5.vtp";
 
   const int invalidArgs =
     Parse(argv, meshFile, loopsFile, insideOut, useCookieCutter, useClipDataSet, movable, argc);
@@ -157,7 +158,10 @@ int main(int argc, char** argv)
   vtkNew<vtkNamedColors> colors;
 
   vtkSmartPointer<vtkXMLUnstructuredDataReader> reader;
-  vtkNew<vtkThreshold> constraints; // highlight them.
+  
+  // highlight them.
+  vtkNew<vtkThreshold> constraints;
+  vtkNew<vtkThresholdPoints> acquired;
 
   if (has_suffix(meshFile, ".vtp"))
   {
@@ -211,6 +215,10 @@ int main(int argc, char** argv)
     constraints->SetInputConnection(surfCutter->GetOutputPort());
     constraints->SetInputArrayToProcess(
       0, 0, 0, vtkDataObject::FIELD_ASSOCIATION_CELLS, "Constrained");
+    constraints->ThresholdBetween(1, 1);
+    acquired->SetInputConnection(surfCutter->GetOutputPort());
+    acquired->SetInputArrayToProcess(0, 0, 0, vtkDataObject::FIELD_ASSOCIATION_POINTS, "Acquired");
+    acquired->ThresholdBetween(1, 1);
   }
   else if (useCookieCutter)
   {
@@ -243,6 +251,10 @@ int main(int argc, char** argv)
   constraintsMapper->SetInputConnection(constraints->GetOutputPort());
   constraintsMapper->ScalarVisibilityOff();
 
+  vtkNew<vtkDataSetMapper> acquiredMapper;
+  acquiredMapper->SetInputConnection(acquired->GetOutputPort());
+  acquiredMapper->ScalarVisibilityOff();
+
   vtkNew<vtkDataSetMapper> polysMapper;
   polysMapper->SetInputConnection(loopsReader->GetOutputPort());
 
@@ -265,6 +277,13 @@ int main(int argc, char** argv)
   constraintsActor->GetProperty()->SetLineWidth(4);
   constraintsActor->GetProperty()->SetColor(colors->GetColor3d("cadmium_red_deep").GetData());
 
+  vtkNew<vtkActor> acquiredActor;
+  acquiredActor->SetMapper(acquiredMapper);
+  acquiredActor->GetProperty()->SetRepresentationToPoints();
+  acquiredActor->GetProperty()->SetPointSize(16);
+  acquiredActor->GetProperty()->RenderPointsAsSpheresOn();
+  acquiredActor->GetProperty()->SetColor(colors->GetColor3d("orange").GetData());
+
   vtkNew<vtkActor> polysActor;
   polysActor->SetMapper(polysMapper);
   polysActor->GetProperty()->SetRepresentationToWireframe();
@@ -276,6 +295,7 @@ int main(int argc, char** argv)
   renderer->AddActor(meshActor);
   renderer->AddActor(polysActor);
   renderer->AddActor(constraintsActor);
+  renderer->AddActor(acquiredActor);
   renderer->SetBackground(colors->GetColor3d("slate_grey").GetData());
 
   vtkNew<vtkRenderWindow> renderWindow;
