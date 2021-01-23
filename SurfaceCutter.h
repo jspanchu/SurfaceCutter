@@ -1,40 +1,42 @@
+#pragma once
 /**
- * @class   SurfaceCutter
- * @brief   Cut triangulated surfaces with polygons
+ *
+ * @file  SurfaceCutter.h
+ * @class SurfaceCutter
+ * @brief Cut triangulated surfaces with polygons
  *
  * Cut a triangulated surface with one or more polygons.
  * It differs from vtkClipDataSet which is a Scalar-based clip operation.
  *
  * This filter crops an input vtkPolyData consisting of triangles
- * with loops specified by a second input containing polygons. 
+ * with loops specified by a second input containing polygons.
  * Note that this filter can handle concave polygons. It only produces triangles
  * and line segments (which are inherited from given loop's edges)
- * 
+ *
  * The result triangles will be rejected/accepted if necessary. See SetInsideOut()
- * This is decided with a point-in-polygon test. It also handles situation where 
+ * This is decided with a point-in-polygon test. It also handles situation where
  * a polygon's point might coincide with a triangle's edge or a vertex.
  *
  * @note PointData is interpolated to output.
  * CellData is copied over to both constraint lines, new triangles
  *
  * @warning
- * The z-values of the input vtkPolyData and the points defining the loops are
+ * z-values of the input vtkPolyData and the points defining the loops are
  * assumed to lie at z=constant. In other words, this filter assumes that the data lies
  * in a plane orthogonal to the z axis.
- * 
+ *
  * @sa
  * vtkClipDataSet vtkClipPolyData
  *
  */
 
-#ifndef SurfaceCutter_h__
-#define SurfaceCutter_h__
-
-#include "vtkPolyDataAlgorithm.h"
+#include <vtkPolyDataAlgorithm.h>
 
 #include "vtkAbstractCellLocator.h"
 #include "vtkIncrementalPointLocator.h"
 #include "vtkSmartPointer.h"
+
+class vtkPolyData;
 
 class SurfaceCutter : public vtkPolyDataAlgorithm
 {
@@ -46,6 +48,15 @@ public:
   static SurfaceCutter* New();
   vtkTypeMacro(SurfaceCutter, vtkPolyDataAlgorithm);
   void PrintSelf(ostream& os, vtkIndent indent) override;
+
+  //@{
+  /**
+   * Accelerate cell searches with a multi-threaded cell locator. Default: On
+   */
+  vtkBooleanMacro(AccelerateCellLocator, bool);
+  vtkSetMacro(AccelerateCellLocator, bool);
+  vtkGetMacro(AccelerateCellLocator, bool);
+  //@}
 
   //@{
   /**
@@ -86,8 +97,8 @@ public:
 
   //@{
   /**
-   * Specify a subclass of vtkAbstractCellLocator which implements the method 'FindCellsWithinBounds()'.
-   * Ex: vtkStaticCellLocator, vtkCellLocator. Not vtkOBBTree
+   * Specify a subclass of vtkAbstractCellLocator which implements the method
+   * 'FindCellsWithinBounds()'. Ex: vtkStaticCellLocator, vtkCellLocator. Not vtkOBBTree
    */
   vtkSetSmartPointerMacro(CellLocator, vtkAbstractCellLocator);
   vtkGetSmartPointerMacro(CellLocator, vtkAbstractCellLocator);
@@ -108,7 +119,7 @@ public:
    * self intersect. The loops are defined from the polygons defined in
    * this second input.
    */
-  void SetLoops(vtkPointSet* loops);
+  void SetLoopsData(vtkPolyData* loops);
 
   /**
    * Specify the a second vtkPolyData input which defines loops used to cut
@@ -117,31 +128,33 @@ public:
    * this second input.
    */
   void SetLoopsConnection(vtkAlgorithmOutput* output);
-  
+
   /**
-   * Create default locators. Used to create one when none are specified. 
+   * Create default locators. Used to create one when none are specified.
    * The point locator is used to merge coincident points.
-   * The cell locator is used to accelerate cell searches. 
+   * The cell locator is used to accelerate cell searches.
    */
   void CreateDefaultLocators();
 
 protected:
   SurfaceCutter();
-  ~SurfaceCutter();
+  ~SurfaceCutter() override;
 
+  bool AccelerateCellLocator;
   bool ColorAcquiredPts;
   bool ColorLoopEdges;
   bool InsideOut;
   double Tolerance;
+
   vtkSmartPointer<vtkAbstractCellLocator> CellLocator;
   vtkSmartPointer<vtkIncrementalPointLocator> PointLocator;
 
   int RequestData(vtkInformation* request, vtkInformationVector** inputVector,
     vtkInformationVector* outputVector) override;
+  int FillInputPortInformation(int port, vtkInformation* info) override;
+  int FillOutputPortInformation(int port, vtkInformation* info) override;
 
 private:
   SurfaceCutter(const SurfaceCutter&) = delete;
   void operator=(const SurfaceCutter&) = delete;
 };
-
-#endif // SurfaceCutter_h__
