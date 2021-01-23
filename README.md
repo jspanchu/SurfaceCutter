@@ -1,6 +1,14 @@
 # SurfaceCutter
 Cut triangulated surfaces with 2D loop polygons.
 
+### Build
+```shell
+mkdir build
+cd build
+cmake .. -GNinja
+ninja
+```
+
 ### Usage
 ```c++
 #include <SurfaceCutter.h>
