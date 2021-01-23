@@ -127,7 +127,7 @@ int compare(vtkSmartPointer<vtkPolyData> pdata1, vtkSmartPointer<vtkPolyData> pd
   auto iter = vtk::TakeSmartPointer(pdata1->NewCellIterator());
   auto testIter = vtk::TakeSmartPointer(pdata2->NewCellIterator());
   for (iter->InitTraversal(), testIter->InitTraversal();
-       !iter->IsDoneWithTraversal(), !testIter->IsDoneWithTraversal();
+       !iter->IsDoneWithTraversal() && !testIter->IsDoneWithTraversal();
        iter->GoToNextCell(), testIter->GoToNextCell())
   {
     // same cell type
