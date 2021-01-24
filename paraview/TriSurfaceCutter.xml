@@ -1,0 +1,183 @@
+<ServerManagerConfiguration>
+  <ProxyGroup name="filters">
+    <SourceProxy name="TriSurfaceCutter" class="tscTriSurfaceCutter" label="Triangulation Cutter">
+        <Documentation
+            long_help="Cut a triangulated surface with one or more polygons."
+            short_help="Cut triangulated surfaces with polygons">
+            This filter is geometrically based, unlike vtkClipDataSet and vtkClipPolyData.
+            
+            It crops an input vtkPolyData consisting of triangles
+            with loops specified by a second input containing polygons.
+            
+            The loop polygons can be concave, can have vertices exactly 
+            coincident with a mesh point/edge.
+
+            It computes an **embedding** of the loop polygons' edges upon the mesh 
+            followed by **removal** of triangles *in(out)side the polygons. See SetInsideOut().
+
+            It is possible to output a pure embedding or a pure removal.
+            
+            Note:
+            PointData is interpolated to output.
+            CellData is copied over to both constraint lines, new triangles
+        </Documentation>
+        <InputProperty
+            name="InputMesh"
+            port_index="0"
+            command="SetInputConnection">
+            <ProxyGroupDomain name="groups">
+                <Group name="sources"/>
+                <Group name="filters"/>
+            </ProxyGroupDomain>
+            <DataTypeDomain name="input_type">
+                <DataType value="vtkPolyData"/>
+            </DataTypeDomain>
+            <Documentation>
+                Set input mesh polydata. 
+                It should ideally have only cells of type VTK_TRIANGLE.
+                
+                Note:
+                Before you use this filter, if
+                1. input is not a pure triangulation, pre-process w/ TriangleFilter/Delaunay2D. 
+                2. input has cells of type VTK_TRIANGLE_STRIP, pre-process w/ Stripper.
+            </Documentation>
+        </InputProperty>
+
+        <InputProperty
+            name="LoopPolygons"
+            port_index="1"
+            command="SetInputConnection">
+            <ProxyGroupDomain name="groups">
+            <Group name="sources"/>
+            <Group name="filters"/>
+            </ProxyGroupDomain>
+            <DataTypeDomain name="input_type">
+            <DataType value="vtkPolyData"/>
+            </DataTypeDomain>
+            <Documentation>
+                Set the polydata that contains loop polygons.
+
+                Warning:
+                z-coordinates of the points are assumed to lie at z=constant.
+                In other words, this filter assumes that the data lies in a plane
+                orthogonal to the z axis.
+            </Documentation>
+        </InputProperty>
+
+        <IntVectorProperty
+            name="AccelerateCellLocator"
+            command="SetAccelerateCellLocator"
+            label="Accelerate Cell Queries"
+            number_of_elements="1"
+            panel_visibility="advanced"
+            default_values="1">
+            <BooleanDomain name="bool"/>
+            <Documentation>
+                Check this box to accelerate cell queries with a 
+                multi-threaded cell locator. Default is On.
+            </Documentation>
+        </IntVectorProperty>
+
+        <IntVectorProperty
+            name="Embed"
+            command="SetEmbed"
+            label="Embed"
+            number_of_elements="1"
+            default_values="1">
+            <BooleanDomain name="bool"/>
+            <Documentation>
+                Check this box to **embed** loop polygons onto the mesh. Default is On.
+                Note: 
+                    If **Remove** is disabled, the very functionality of this filter is disrespected.
+            </Documentation>
+        </IntVectorProperty>
+
+        <IntVectorProperty
+            name="Remove"
+            command="SetRemove"
+            label="Remove"
+            number_of_elements="1"
+            default_values="1">
+            <BooleanDomain name="bool"/>
+            <Documentation>
+                Check this box to only **remove** cells in(out)side loop polygons. Default is On.
+                Note: 
+                    If **Remove** is disabled, the functionality of this filter is partially disrespected.
+            </Documentation>
+        </IntVectorProperty>
+
+        <IntVectorProperty
+            name="ColorAcquiredPts"
+            command="SetColorAcquiredPts"
+            label="Color Acquired Points"
+            number_of_elements="1"
+            default_values="1">
+            <BooleanDomain name="bool"/>
+            <Documentation>
+                Check this box to color acquired(from loop polygons) points. Default is On.
+            </Documentation>
+        </IntVectorProperty>
+
+        <IntVectorProperty
+            name="ColorLoopEdges"
+            command="SetColorLoopEdges"
+            label="Color Loop Edge"
+            number_of_elements="1"
+            default_values="1">
+            <BooleanDomain name="bool"/>
+            <Documentation>
+                Check this box to color constrained line segments (from loop polygons). Default is On.
+            </Documentation>
+        </IntVectorProperty>
+
+        <IntVectorProperty
+            name="InsideOut"
+            command="SetInsideOut"
+            label="Invert"
+            number_of_elements="1"
+            default_values="1">
+            <BooleanDomain name="bool"/>
+            <Documentation>
+                Check this box to remove cells outside loop polygons. Default is On.
+            </Documentation>
+        </IntVectorProperty>
+
+        <DoubleVectorProperty
+            name="Tolerance"
+            command="SetTolerance"
+            label="Tolerance"
+            number_of_elements="1"
+            default_values="1.0e-6">
+            <Documentation>
+                Set numeric tolerance to aid unique point insertion and intersection math.
+            </Documentation>
+        </DoubleVectorProperty>
+
+        <Hints>
+            <ShowInMenu category="SCUT" />
+        </Hints>
+
+        <!-- incremental point locator begin -->
+        <ProxyProperty command="SetPointLocator"
+                     label="Point Merge Method"
+                     name="PointLocator"
+                     panel_visibility="advanced" >
+        <ProxyGroupDomain name="groups">
+          <Group name="incremental_point_locators" />
+        </ProxyGroupDomain>
+        <ProxyListDomain name="proxy_list">
+          <Proxy group="incremental_point_locators"
+                 name="MergePoints" />
+          <Proxy group="incremental_point_locators"
+                 name="IncrementalOctreeMergePoints" />
+          <Proxy group="incremental_point_locators"
+                 name="NonMergingPointLocator" />
+        </ProxyListDomain>
+        <Documentation>
+            This property specifies an incremental point locator for
+            merging duplicate / coincident points.
+        </Documentation>
+      </ProxyProperty>
+    </SourceProxy>
+  </ProxyGroup>
+</ServerManagerConfiguration>

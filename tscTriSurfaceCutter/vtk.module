@@ -1,0 +1,10 @@
+NAME
+  tscTriSurfaceCutter
+DESCRIPTION
+  Cut triangulated surfaces with polygons.
+DEPENDS
+  VTK::CommonExecutionModel
+PRIVATE_DEPENDS
+  VTK::FiltersCore
+OPTIONAL_DEPENDS
+  VTK::FiltersFlowPaths

@@ -1,4 +1,4 @@
-#include "SurfaceCutter.h"
+#include "tscTriSurfaceCutter.h"
 
 #include <algorithm>
 #include <iterator>
@@ -42,9 +42,9 @@ using SegmentsType = std::vector<SegmentType>;
 using LoopInfoType = std::pair<vtkBoundingBox, vtkNew<vtkIdList>>;
 using LoopsInfoType = std::vector<LoopInfoType>;
 
-vtkStandardNewMacro(SurfaceCutter);
+vtkStandardNewMacro(tscTriSurfaceCutter);
 
-SurfaceCutter::SurfaceCutter()
+tscTriSurfaceCutter::tscTriSurfaceCutter()
   : AccelerateCellLocator(true)
   , ColorAcquiredPts(true)
   , ColorLoopEdges(true)
@@ -57,25 +57,25 @@ SurfaceCutter::SurfaceCutter()
   this->CreateDefaultLocators();
 }
 
-SurfaceCutter::~SurfaceCutter() {}
+tscTriSurfaceCutter::~tscTriSurfaceCutter() {}
 
-void SurfaceCutter::SetLoopsData(vtkPolyData* loops)
+void tscTriSurfaceCutter::SetLoopsData(vtkPolyData* loops)
 {
   this->SetInputData(1, loops);
 }
 
-void SurfaceCutter::SetLoopsConnection(vtkAlgorithmOutput* output)
+void tscTriSurfaceCutter::SetLoopsConnection(vtkAlgorithmOutput* output)
 {
   this->SetInputConnection(1, output);
 }
 
-int SurfaceCutter::FillInputPortInformation(int vtkNotUsed(port), vtkInformation* info)
+int tscTriSurfaceCutter::FillInputPortInformation(int vtkNotUsed(port), vtkInformation* info)
 {
   info->Set(vtkAlgorithm::INPUT_REQUIRED_DATA_TYPE(), "vtkPolyData");
   return 1;
 }
 
-int SurfaceCutter::FillOutputPortInformation(int port, vtkInformation* info)
+int tscTriSurfaceCutter::FillOutputPortInformation(int port, vtkInformation* info)
 {
   switch (port)
   {
@@ -307,11 +307,11 @@ namespace
     {
       point_ids.reserve(3);
     }
-    Child(const double& cx, const double& cy, const vtkIdType* pts, const vtkIdType npts,
+    Child(const double& cx_, const double& cy_, const vtkIdType* pts, const vtkIdType npts_,
       const double bounds[4])
-      : cx(cx)
-      , cy(cy)
-      , num_point_ids(npts)
+      : cx(cx_)
+      , cy(cy_)
+      , num_point_ids(npts_)
     {
       point_ids.assign(pts, pts + num_point_ids);
       bbox = vtkBoundingBox(bounds[0], bounds[1], bounds[2], bounds[3], 0.0, 0.0);
@@ -650,6 +650,7 @@ namespace
      * @param out_lines_cd output cell data (for lines)
      * @param locator used to insert unique points in output
      * @param acquisition to color acquired points in output
+     * @param passthrough avoid in/out tests
      *
      * @note Remove triangles if:
      * 1. inside_out is set, reject triangles outside a polygon.
@@ -663,7 +664,7 @@ namespace
       Root& parent, vtkPointData* in_pd, vtkPointData* out_pd, vtkCellArray* out_tris,
       vtkCellArray* out_lines, vtkCellData* in_cd, vtkCellData* out_tris_cd,
       vtkCellData* out_lines_cd, vtkIncrementalPointLocator* locator,
-      vtkUnsignedCharArray* acquisition)
+      vtkUnsignedCharArray* acquisition, const bool& passthrough)
     {
       // throw std::logic_error("The method or operation is not implemented.");
       auto points_1 = vtk::DataArrayTupleRange<3>(points1_arr);
@@ -687,59 +688,64 @@ namespace
         const auto& point_ids = child.point_ids;
 
         bool rejected(false);
-        vtkIdType loop_id(-1);
-        for (auto& loop : loops)
+        if (!passthrough)
         {
-          ++loop_id;
-          const vtkBoundingBox& loop_bbox = loop.first;
-          vtkIdList* loop_pt_ids = loop.second;
-          const int& inside_out = inside_outs[loop_id];
-
-          rejected = false;
-
-          // the easy-way; effective when inside out is unset. (non-default)
-          if (!inside_out)
+          vtkIdType loop_id(-1);
+          for (auto& loop : loops)
           {
-            if (!(loop_bbox.Contains(tri_bbox) || loop_bbox.Intersects(tri_bbox)))
+            ++loop_id;
+            const vtkBoundingBox& loop_bbox = loop.first;
+            vtkIdList* loop_pt_ids = loop.second;
+            const int& inside_out = inside_outs[loop_id];
+
+            rejected = false;
+
+            // the easy-way; effective when inside out is unset. (non-default)
+            if (!inside_out)
             {
-              rejected = false;
-              continue;
+              if (!(loop_bbox.Contains(tri_bbox) || loop_bbox.Intersects(tri_bbox)))
+              {
+                rejected = false;
+                continue;
+              }
             }
-          }
 
-          // the hard-way; default
-          // taken from
-          // [here](https://wrf.ecse.rpi.edu/Research/Short_Notes/pnpoly.html#The%20C%20Code)
-          bool inside = false;
-          vtkIdType num_loop_pts(loop_pt_ids->GetNumberOfIds());
-          const vtkIdType* loopPtsPtr = loop_pt_ids->GetPointer(0);
-          for (vtkIdType i = 0, j = num_loop_pts - 1; i < num_loop_pts; j = i++)
-          {
-            const double ix = points_2[loopPtsPtr[i]][0];
-            const double iy = points_2[loopPtsPtr[i]][1];
-            const double jx = points_2[loopPtsPtr[j]][0];
-            const double jy = points_2[loopPtsPtr[j]][1];
+            // the hard-way; default
+            // taken from
+            // [here](https://wrf.ecse.rpi.edu/Research/Short_Notes/pnpoly.html#The%20C%20Code)
+            bool inside = false;
+            vtkIdType num_loop_pts(loop_pt_ids->GetNumberOfIds());
+            const vtkIdType* loopPtsPtr = loop_pt_ids->GetPointer(0);
+            for (vtkIdType i = 0, j = num_loop_pts - 1; i < num_loop_pts; j = i++)
+            {
+              const double ix = points_2[loopPtsPtr[i]][0];
+              const double iy = points_2[loopPtsPtr[i]][1];
+              const double jx = points_2[loopPtsPtr[j]][0];
+              const double jy = points_2[loopPtsPtr[j]][1];
 
-            if (((iy > test_y) != (jy > test_y)) &&
-              (test_x < (jx - ix) * (test_y - iy) / (jy - iy) + ix))
-              inside = !inside;
-          }
+              if (((iy > test_y) != (jy > test_y)) &&
+                (test_x < (jx - ix) * (test_y - iy) / (jy - iy) + ix))
+                inside = !inside;
+            }
 
-          bool outside = !inside;
-          if (inside_out && outside)
-          {
-            rejected = true;
-            break;
-          }
-          else if (!inside_out && inside)
-          {
-            rejected = true;
-            break;
+            bool outside = !inside;
+            if (outside)
+            {
+              rejected = true;
+              break;
+            }
+            else if (!inside_out && inside)
+            {
+              rejected = true;
+              break;
+            }
           }
         }
 
         if (rejected)
-          continue; // next triangle
+        {
+          continue; // to next triangle
+        }
 
         double dist2(0.);
         double* closest = nullptr;
@@ -793,10 +799,11 @@ namespace
      * @param vl a vertex id into mesh
      * @param vm another vertex id into mesh
      */
-    ApplyConstraintImpl(vtkSmartPointer<vtkPolyData> mesh, const vtkIdType& vl, const vtkIdType& vm)
-      : mesh(mesh)
-      , vl(vl)
-      , vm(vm)
+    ApplyConstraintImpl(
+      vtkSmartPointer<vtkPolyData> mesh_, const vtkIdType& vl_, const vtkIdType& vm_)
+      : mesh(mesh_)
+      , vl(vl_)
+      , vm(vm_)
     {
     }
 
@@ -912,29 +919,29 @@ namespace
      * @param out_line_cd output cell data (line segments)
      * @param locator to insert unique points.
      */
-    SurfCutHelper(const LoopsInfoType& loops_info_holder, vtkTypeInt32Array* inside_outs,
-      vtkPointData* in_pd, vtkPointData* out_pd, vtkCellArray* out_tris, vtkCellArray* out_lines,
-      vtkCellData* in_cd, vtkCellData* out_tri_cd, vtkCellData* out_line_cd,
-      vtkIncrementalPointLocator* locator, vtkPoints* in_points, vtkPoints* in_loop_points,
-      vtkUnsignedCharArray* acquisition)
-      : loops_info_holder(loops_info_holder)
-      , inside_outs(inside_outs)
-      , out_tris(out_tris)
-      , out_lines(out_lines)
-      , in_cd(in_cd)
-      , out_lines_cd(out_line_cd)
-      , out_tris_cd(out_tri_cd)
-      , locator(locator)
-      , in_pd(in_pd)
-      , out_pd(out_pd)
-      , in_points(in_points)
-      , in_loop_points(in_loop_points)
-      , acquisition(acquisition)
+    SurfCutHelper(const LoopsInfoType& loops_info_holder_, vtkTypeInt32Array* inside_outs_,
+      vtkPointData* in_pd_, vtkPointData* out_pd_, vtkCellArray* out_tris_,
+      vtkCellArray* out_lines_, vtkCellData* in_cd_, vtkCellData* out_tri_cd_,
+      vtkCellData* out_line_cd_, vtkIncrementalPointLocator* locator_, vtkPoints* in_points_,
+      vtkPoints* in_loop_points_, vtkUnsignedCharArray* acquisition_)
+      : loops_info_holder(loops_info_holder_)
+      , inside_outs(inside_outs_)
+      , out_tris(out_tris_)
+      , out_lines(out_lines_)
+      , in_cd(in_cd_)
+      , out_lines_cd(out_line_cd_)
+      , out_tris_cd(out_tri_cd_)
+      , locator(locator_)
+      , in_pd(in_pd_)
+      , out_pd(out_pd_)
+      , in_points(in_points_)
+      , in_loop_points(in_loop_points_)
+      , acquisition(acquisition_)
     {
       tris->InsertNextCell(3, TRIVERTS);
-      in->SetPoints(parent.repr->Points);
+      input->SetPoints(parent.repr->Points);
       del2d->SetProjectionPlaneMode(VTK_DELAUNAY_XY_PLANE);
-      del2d->SetInputData(in);
+      del2d->SetInputData(input);
       del2d->SetOffset(100.0); // bump this if Delaunay output is concave
     }
 
@@ -942,17 +949,17 @@ namespace
      * @brief Pop triangles that were birthed after `push()->update()` into output data structures.
      *
      */
-    void pop()
+    void pop(const bool& passthrough)
     {
       PopTrisImpl worker;
       vtkDataArray* points1_arr = parent.repr->Points->GetData();
       vtkDataArray* points2_arr = in_loop_points->GetData();
       if (!dispatchRR::Execute(points1_arr, points2_arr, worker, inside_outs, loops_info_holder,
             is_acquired, constraints, parent, in_pd, out_pd, out_tris, out_lines, in_cd,
-            out_tris_cd, out_lines_cd, locator, acquisition))
+            out_tris_cd, out_lines_cd, locator, acquisition, passthrough))
         worker(points1_arr, points2_arr, inside_outs, loops_info_holder, is_acquired, constraints,
           parent, in_pd, out_pd, out_tris, out_lines, in_cd, out_tris_cd, out_lines_cd, locator,
-          acquisition);
+          acquisition, passthrough);
     }
 
     /**
@@ -1008,21 +1015,21 @@ namespace
 
         if (del2d->GetOutput())
         {
-          out->ShallowCopy(del2d->GetOutput());
+          output->ShallowCopy(del2d->GetOutput());
 
-          if (out->GetNumberOfPolys())
+          if (output->GetNumberOfPolys())
           {
-            out->BuildLinks();
+            output->BuildLinks();
             for (const auto& edge : constraints)
             {
               if (edge.first == edge.second)
                 continue;
 
               unsigned short num_iters = 0;
-              while (!out->IsEdge(edge.first, edge.second))
+              while (!output->IsEdge(edge.first, edge.second))
               {
-                auto constraintWorker = ApplyConstraintImpl(out, edge.first, edge.second);
-                vtkDataArray* points = out->GetPoints()->GetData();
+                auto constraintWorker = ApplyConstraintImpl(output, edge.first, edge.second);
+                vtkDataArray* points = output->GetPoints()->GetData();
                 if (!dispatchR::Execute(points, constraintWorker, tol))
                 {
                   constraintWorker(points, tol);
@@ -1035,7 +1042,7 @@ namespace
                 }
               }
             }
-            tris->ShallowCopy(out->GetPolys());
+            tris->ShallowCopy(output->GetPolys());
           }
         }
       }
@@ -1072,7 +1079,7 @@ namespace
     vtkTypeInt32Array* inside_outs;
     vtkNew<vtkCellArray> tris;
     vtkNew<vtkDelaunay2D> del2d;
-    vtkNew<vtkPolyData> in, out;
+    vtkNew<vtkPolyData> input, output;
     vtkCellArray *out_tris = nullptr, *out_lines = nullptr;
     vtkCellData *in_cd = nullptr, *out_lines_cd = nullptr, *out_tris_cd = nullptr;
     vtkIncrementalPointLocator* locator = nullptr;
@@ -1083,7 +1090,7 @@ namespace
 }
 // anon end
 
-int SurfaceCutter::RequestData(vtkInformation* vtkNotUsed(request),
+int tscTriSurfaceCutter::RequestData(vtkInformation* vtkNotUsed(request),
   vtkInformationVector** inputVector, vtkInformationVector* outputVector)
 {
   vtkSmartPointer<vtkPolyData> input =
@@ -1092,6 +1099,16 @@ int SurfaceCutter::RequestData(vtkInformation* vtkNotUsed(request),
     vtkPolyData::GetData(inputVector[1]->GetInformationObject(0));
 
   vtkSmartPointer<vtkPolyData> output = vtkPolyData::GetData(outputVector->GetInformationObject(0));
+
+  if (!this->Embed && !this->Remove) // do nothing
+  {
+    output->CopyStructure(input);
+    output->GetPointData()->CopyAllocate(input->GetPointData());
+    output->GetPointData()->CopyData(input->GetPointData(), 0, input->GetNumberOfPoints());
+    output->GetCellData()->CopyAllocate(input->GetCellData());
+    output->GetCellData()->CopyData(input->GetCellData(), 0, input->GetNumberOfCells());
+    return 1;
+  }
 
   // we're about to do stuff that is not thread-safe (query bounds, add scalars, ..).
   // multiple threads might use the same loop polydata for different surfaces,
@@ -1325,7 +1342,7 @@ int SurfaceCutter::RequestData(vtkInformation* vtkNotUsed(request),
 
     // embed
     const auto& cross_edges = can_cross.find(cell_id);
-    if (cross_edges != can_cross.end())
+    if ((cross_edges != can_cross.end()) && this->Embed)
     {
       const SegmentsType& loop_edges = cross_edges->second;
       vtkDebugMacro(<< "Crosses " << loop_edges.size() << " edges");
@@ -1340,7 +1357,7 @@ int SurfaceCutter::RequestData(vtkInformation* vtkNotUsed(request),
 
     // accept/reject
     vtkDebugMacro(<< "Popping .. ");
-    helper.pop();
+    helper.pop(!this->Remove);
     helper.reset();
 
     if (!(cell_id % report_every))
@@ -1394,7 +1411,7 @@ int SurfaceCutter::RequestData(vtkInformation* vtkNotUsed(request),
   return 1;
 }
 
-void SurfaceCutter::PrintSelf(ostream& os, vtkIndent indent)
+void tscTriSurfaceCutter::PrintSelf(ostream& os, vtkIndent indent)
 {
   this->Superclass::PrintSelf(os, indent);
 
@@ -1426,7 +1443,7 @@ void SurfaceCutter::PrintSelf(ostream& os, vtkIndent indent)
   }
 }
 
-void SurfaceCutter::CreateDefaultLocators()
+void tscTriSurfaceCutter::CreateDefaultLocators()
 {
   if (!this->CellLocator)
   {

@@ -1,8 +1,8 @@
 #pragma once
 /**
  *
- * @file  SurfaceCutter.h
- * @class SurfaceCutter
+ * @file  tscTriSurfaceCutter.h
+ * @class tscTriSurfaceCutter
  * @brief Cut triangulated surfaces with polygons
  *
  * Cut a triangulated surface with one or more polygons.
@@ -13,17 +13,18 @@
  * Note that this filter can handle concave polygons. It only produces triangles
  * and line segments (which are inherited from given loop's edges)
  *
- * The result triangles will be rejected/accepted if necessary. See SetInsideOut()
- * This is decided with a point-in-polygon test. It also handles situation where
- * a polygon's point might coincide with a triangle's edge or a vertex.
+ * The result triangles will be rejected/accepted if necessary. See
+ * SetInsideOut() This is decided with a point-in-polygon test. It also handles
+ * situation where a polygon's point might coincide with a triangle's edge or a
+ * vertex.
  *
  * @note PointData is interpolated to output.
  * CellData is copied over to both constraint lines, new triangles
  *
  * @warning
  * z-values of the input vtkPolyData and the points defining the loops are
- * assumed to lie at z=constant. In other words, this filter assumes that the data lies
- * in a plane orthogonal to the z axis.
+ * assumed to lie at z=constant. In other words, this filter assumes that the
+ * data lies in a plane orthogonal to the z axis.
  *
  * @sa
  * vtkClipDataSet vtkClipPolyData
@@ -38,16 +39,15 @@
 
 class vtkPolyData;
 
-class SurfaceCutter : public vtkPolyDataAlgorithm
-{
+class tscTriSurfaceCutter : public vtkPolyDataAlgorithm {
 public:
   /**
    * Construct object with tolerance 1.0e-6, inside out set to true,
    * color acquired points, color loop edges
    */
-  static SurfaceCutter* New();
-  vtkTypeMacro(SurfaceCutter, vtkPolyDataAlgorithm);
-  void PrintSelf(ostream& os, vtkIndent indent) override;
+  static tscTriSurfaceCutter *New();
+  vtkTypeMacro(tscTriSurfaceCutter, vtkPolyDataAlgorithm);
+  void PrintSelf(ostream &os, vtkIndent indent) override;
 
   //@{
   /**
@@ -60,7 +60,8 @@ public:
 
   //@{
   /**
-   * Append an array to output point data that colors acquired points. Default: On
+   * Append an array to output point data that colors acquired points. Default:
+   * On
    */
   vtkBooleanMacro(ColorAcquiredPts, bool);
   vtkSetMacro(ColorAcquiredPts, bool);
@@ -69,7 +70,8 @@ public:
 
   //@{
   /**
-   * Append an array to output cell data which colors constrained lines. Default: On
+   * Append an array to output cell data which colors constrained lines.
+   * Default: On
    */
   vtkBooleanMacro(ColorLoopEdges, bool);
   vtkSetMacro(ColorLoopEdges, bool);
@@ -89,7 +91,7 @@ public:
 
   //@{
   /**
-   * Tolerance for point merging.
+   * Numeric tolerance for point merging, intersection math.
    */
   vtkSetMacro(Tolerance, double);
   vtkGetMacro(Tolerance, double);
@@ -98,7 +100,8 @@ public:
   //@{
   /**
    * Specify a subclass of vtkAbstractCellLocator which implements the method
-   * 'FindCellsWithinBounds()'. Ex: vtkStaticCellLocator, vtkCellLocator. Not vtkOBBTree
+   * 'FindCellsWithinBounds()'. Ex: vtkStaticCellLocator, vtkCellLocator. Not
+   * vtkOBBTree
    */
   vtkSetSmartPointerMacro(CellLocator, vtkAbstractCellLocator);
   vtkGetSmartPointerMacro(CellLocator, vtkAbstractCellLocator);
@@ -113,13 +116,26 @@ public:
   vtkGetSmartPointerMacro(PointLocator, vtkIncrementalPointLocator);
   //@}
 
+  //@{
   /**
-   * Specify the a second vtkPolyData input which defines loops used to cut
-   * the input polygonal data. These loops must be manifold, i.e., do not
-   * self intersect. The loops are defined from the polygons defined in
-   * this second input.
+   * Do not respect the very functionality of this filter. Only embed loop
+   * polygons onto the mesh
+   * @note InsideOut option does not apply here.
    */
-  void SetLoopsData(vtkPolyData* loops);
+  vtkBooleanMacro(Embed, bool);
+  vtkSetMacro(Embed, bool);
+  vtkGetMacro(Embed, bool);
+  //@}
+
+  //@{
+  /**
+   * Partially respect functionality of this filter. Only remove cells
+   * in(out)side loop polygons.
+   */
+  vtkBooleanMacro(Remove, bool);
+  vtkSetMacro(Remove, bool);
+  vtkGetMacro(Remove, bool);
+  //@}
 
   /**
    * Specify the a second vtkPolyData input which defines loops used to cut
@@ -127,7 +143,15 @@ public:
    * self intersect. The loops are defined from the polygons defined in
    * this second input.
    */
-  void SetLoopsConnection(vtkAlgorithmOutput* output);
+  void SetLoopsData(vtkPolyData *loops);
+
+  /**
+   * Specify the a second vtkPolyData input which defines loops used to cut
+   * the input polygonal data. These loops must be manifold, i.e., do not
+   * self intersect. The loops are defined from the polygons defined in
+   * this second input.
+   */
+  void SetLoopsConnection(vtkAlgorithmOutput *output);
 
   /**
    * Create default locators. Used to create one when none are specified.
@@ -137,24 +161,26 @@ public:
   void CreateDefaultLocators();
 
 protected:
-  SurfaceCutter();
-  ~SurfaceCutter() override;
+  tscTriSurfaceCutter();
+  ~tscTriSurfaceCutter() override;
 
   bool AccelerateCellLocator;
   bool ColorAcquiredPts;
   bool ColorLoopEdges;
+  bool Embed;
   bool InsideOut;
+  bool Remove;
   double Tolerance;
 
   vtkSmartPointer<vtkAbstractCellLocator> CellLocator;
   vtkSmartPointer<vtkIncrementalPointLocator> PointLocator;
 
-  int RequestData(vtkInformation* request, vtkInformationVector** inputVector,
-    vtkInformationVector* outputVector) override;
-  int FillInputPortInformation(int port, vtkInformation* info) override;
-  int FillOutputPortInformation(int port, vtkInformation* info) override;
+  int RequestData(vtkInformation *request, vtkInformationVector **inputVector,
+                  vtkInformationVector *outputVector) override;
+  int FillInputPortInformation(int port, vtkInformation *info) override;
+  int FillOutputPortInformation(int port, vtkInformation *info) override;
 
 private:
-  SurfaceCutter(const SurfaceCutter&) = delete;
-  void operator=(const SurfaceCutter&) = delete;
+  tscTriSurfaceCutter(const tscTriSurfaceCutter &) = delete;
+  void operator=(const tscTriSurfaceCutter &) = delete;
 };

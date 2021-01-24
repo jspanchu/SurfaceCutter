@@ -1,0 +1,6 @@
+NAME
+  TriSurfaceCutter
+DESCRIPTION
+  Cut triangulated surfaces with polygons.
+REQUIRES_MODULES
+  VTK::CommonExecutionModel

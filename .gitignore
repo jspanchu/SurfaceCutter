@@ -2,5 +2,6 @@
 /.vs
 *.json
 build/
+install/
 .vscode/
 .cache/
