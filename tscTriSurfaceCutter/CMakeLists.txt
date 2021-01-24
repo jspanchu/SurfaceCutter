@@ -21,7 +21,9 @@ set (classes tscTriSurfaceCutter)
 vtk_module_add_module(${mod_name}
   CLASSES ${classes}
 )
-vtk_module_compile_options(${mod_name} PRIVATE ${TSC_COMPILER_FLAGS})
+if (TSC_COMPILER_FLAGS)
+  vtk_module_compile_options(${mod_name} PRIVATE ${TSC_COMPILER_FLAGS})
+endif()
 
 if(TSC_LINKER_FLAGS)
   vtk_module_link_options(${mod_name} PRIVATE ${TSC_LINKER_FLAGS})

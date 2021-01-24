@@ -34,9 +34,9 @@ endif ()
 
 if (TSC_CUSTOM_LIBRARY_SUFFIX STREQUAL "<DEFAULT>")
   if (TSC_VERSIONED_INSTALL)
-    set(TSC_CUSTOM_LIBRARY_SUFFIX "${TSC_VERSION_MAJOR}.${TSC_VERSION_MINOR}$<$<CONFIG:Debug>:d>")
+    set(TSC_CUSTOM_LIBRARY_SUFFIX "${TSC_VERSION_MAJOR}.${TSC_VERSION_MINOR}")
   else ()
-    set(TSC_CUSTOM_LIBRARY_SUFFIX "$<$<CONFIG:Debug>:d>")
+    set(TSC_CUSTOM_LIBRARY_SUFFIX "")
   endif ()
 endif ()
 
@@ -86,57 +86,59 @@ vtk_module_build(
   VERSION               "${TSC_VERSION}"
   SOVERSION             "${TSC_VERSION}"
 )
-if(NOT DEFINED TSC_PYTHON_MODULE_DIR)
-  vtk_module_python_default_destination(PYTHON_SITE_PACKAGES_SUFFIX)
-  set(TSC_PYTHON_MODULE_DIR
-    ${PYTHON_SITE_PACKAGES_SUFFIX}
-    CACHE
-    PATH
-    "Where the TSC python module in installed"
+
+if (TSC_WRAP_PYTHON)
+  if(NOT DEFINED TSC_PYTHON_MODULE_DIR)
+    vtk_module_python_default_destination(PYTHON_SITE_PACKAGES_SUFFIX)
+    set(TSC_PYTHON_MODULE_DIR
+      ${PYTHON_SITE_PACKAGES_SUFFIX}
+      CACHE
+      PATH
+      "Where the TSC python module in installed"
+    )
+  endif()
+  vtk_module_wrap_python(
+    MODULES             ${tsc_modules}
+    TARGET              TSC::Python
+    WRAPPED_MODULES     tsc_wrapped_modules
+    INSTALL_HEADERS     ON
+    MODULE_DESTINATION  "${TSC_PYTHON_MODULE_DIR}"
+    CMAKE_DESTINATION   "${tsc_cmake_destination}"
+    LIBRARY_DESTINATION "${CMAKE_INSTALL_LIBDIR}"   # slaps $ORIGIN or @loader_path to CMAKE_INSTALL_RPATH
+    PYTHON_PACKAGE      "tsc"
+    SOABI               ${Python3_SOABI}
+    INSTALL_EXPORT      TSCPython
+  )
+
+  # Generate __init__.py
+  set(InitContent "from __future__ import absolute_import\n")
+  foreach(module ${tsc_modules})
+    set (target "")
+    string(REPLACE "TSC::" "" target ${module})
+    string(APPEND InitContent "from .${target} import *\n")
+  endforeach()
+  file(GENERATE
+    OUTPUT  "${CMAKE_BINARY_DIR}/${TSC_PYTHON_MODULE_DIR}/tsc/__init__.py"
+    CONTENT "${InitContent}"
+  )
+
+  # Install TSC Python
+  export(
+    EXPORT      TSCPython
+    NAMESPACE   TSC::
+    FILE        "${CMAKE_BINARY_DIR}/${tsc_cmake_destination}/TSCPython-targets.cmake"
+  )
+  install(
+    EXPORT       TSCPython
+    NAMESPACE    TSC::
+    FILE         TSCPython-targets.cmake
+    DESTINATION  "${tsc_cmake_destination}"
+  )
+  install(
+    FILES       "${CMAKE_BINARY_DIR}/${TSC_PYTHON_MODULE_DIR}/tsc/__init__.py"
+    DESTINATION "${TSC_PYTHON_MODULE_DIR}/tsc/"
   )
 endif()
-
-vtk_module_wrap_python(
-  MODULES             ${tsc_modules}
-  TARGET              TSC::Python
-  WRAPPED_MODULES     tsc_wrapped_modules
-  INSTALL_HEADERS     ON
-  MODULE_DESTINATION  "${TSC_PYTHON_MODULE_DIR}"
-  CMAKE_DESTINATION   "${tsc_cmake_destination}"
-  LIBRARY_DESTINATION "${CMAKE_INSTALL_LIBDIR}"   # slaps $ORIGIN or @loader_path to CMAKE_INSTALL_RPATH
-  PYTHON_PACKAGE      "tsc"
-  SOABI               ${Python3_SOABI}
-  INSTALL_EXPORT      TSCPython
-)
-
-# Generate __init__.py
-set(InitContent "from __future__ import absolute_import\n")
-foreach(module ${tsc_modules})
-  set (target "")
-  string(REPLACE "TSC::" "" target ${module})
-  string(APPEND InitContent "from .${target} import *\n")
-endforeach()
-file(GENERATE
-  OUTPUT  "${CMAKE_BINARY_DIR}/${TSC_PYTHON_MODULE_DIR}/tsc/__init__.py"
-  CONTENT "${InitContent}"
-)
-
-# Install TSC Python
-export(
-  EXPORT      TSCPython
-  NAMESPACE   TSC::
-  FILE        "${CMAKE_BINARY_DIR}/${tsc_cmake_destination}/TSCPython-targets.cmake"
-)
-install(
-  EXPORT       TSCPython
-  NAMESPACE    TSC::
-  FILE         TSCPython-targets.cmake
-  DESTINATION  "${tsc_cmake_destination}"
-)
-install(
-  FILES       "${CMAKE_BINARY_DIR}/${TSC_PYTHON_MODULE_DIR}/tsc/__init__.py"
-  DESTINATION "${TSC_PYTHON_MODULE_DIR}/tsc/"
-)
 
 if(TSC_BUILD_PARAVIEW_PLUGIN)
   if (NOT ParaView_FOUND)
@@ -183,4 +185,5 @@ endif()
 
 add_executable(tscBench tscBench.cpp)
 target_link_libraries(tscBench PRIVATE ${VTK_LIBRARIES} tscTriSurfaceCutter)
+VTK_MODULE_AUTOINIT(TARGETS tscBench MODULES ${VTK_LIBRARIES} tscTriSurfaceCutter)
 
