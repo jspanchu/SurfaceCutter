@@ -655,8 +655,8 @@ namespace
      * @param passthrough avoid in/out tests
      *
      * @note Remove triangles if:
-     * 1. inside_out is set, reject triangles outside a polygon.
-     * 2. inside_out is unset, reject triangles inside a polygon.
+     * 1. inside_out is set, reject triangles outside all polygons.
+     * 2. inside_out is unset, reject triangles inside at-least one polygon.
      */
     template <typename PointsArrT1, typename = vtk::detail::EnableIfVtkDataArray<PointsArrT1>,
       typename PointsArrT2, typename = vtk::detail::EnableIfVtkDataArray<PointsArrT2>>
@@ -689,7 +689,7 @@ namespace
         const vtkIdType& num_point_ids = child.num_point_ids;
         const auto& point_ids = child.point_ids;
 
-        bool rejected(false);
+        bool rejected(true);
         if (!passthrough)
         {
           vtkIdType loop_id(-1);
@@ -699,8 +699,6 @@ namespace
             const vtkBoundingBox& loop_bbox = loop.first;
             vtkIdList* loop_pt_ids = loop.second;
             const int& inside_out = inside_outs[loop_id];
-
-            rejected = false;
 
             // the easy-way; effective when inside out is unset. (non-default)
             if (!inside_out)
@@ -729,17 +727,20 @@ namespace
                 (test_x < (jx - ix) * (test_y - iy) / (jy - iy) + ix))
                 inside = !inside;
             }
-
             bool outside = !inside;
-            if (outside)
+            
+            if (inside_out)
+            {
+              rejected &= outside;
+            }
+            else if (inside)
             {
               rejected = true;
               break;
             }
-            else if (!inside_out && inside)
+            else
             {
-              rejected = true;
-              break;
+              rejected = false;
             }
           }
         }
