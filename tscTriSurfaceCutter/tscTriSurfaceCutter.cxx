@@ -48,7 +48,9 @@ tscTriSurfaceCutter::tscTriSurfaceCutter()
   : AccelerateCellLocator(true)
   , ColorAcquiredPts(true)
   , ColorLoopEdges(true)
+  , Embed(true)
   , InsideOut(true) // default: remove portions outside loop polygons.
+  , Remove(true)
   , Tolerance(1.0e-6)
 {
   this->SetNumberOfInputPorts(2);

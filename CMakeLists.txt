@@ -180,3 +180,7 @@ if(TSC_BUILD_PARAVIEW_PLUGIN)
     DESTINATION "${TSC_INSTALL_PLUGIN_DIR}"
   )
 endif()
+
+add_executable(tscBench tscBench.cpp)
+target_link_libraries(tscBench PRIVATE ${VTK_LIBRARIES} tscTriSurfaceCutter)
+
