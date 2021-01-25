@@ -6,25 +6,25 @@
  * @brief Cut triangulated surfaces with polygons
  *
  * Cut a triangulated surface with one or more polygons.
- * It differs from vtkClipDataSet which is a Scalar-based clip operation.
+ * This filter is geometrically based, unlike vtkClipDataSet and vtkClipPolyData
+ * (both of which are scalar-based).
  *
- * This filter crops an input vtkPolyData consisting of triangles
+ * This filter is geometrically based, unlike vtkClipDataSet and vtkClipPolyData.
+ *             
+ * It crops an input vtkPolyData consisting of triangles
  * with loops specified by a second input containing polygons.
- * Note that this filter can handle concave polygons. It only produces triangles
- * and line segments (which are inherited from given loop's edges)
- *
- * The result triangles will be rejected/accepted if necessary. See
- * SetInsideOut() This is decided with a point-in-polygon test. It also handles
- * situation where a polygon's point might coincide with a triangle's edge or a
- * vertex.
- *
- * @note PointData is interpolated to output.
+ *             
+ * The loop polygons can be concave, can have vertices exactly 
+ * coincident with a mesh point/edge.
+ * 
+ * It computes an **embedding** of the loop polygons' edges upon the mesh 
+ * followed by **removal** of triangles *in(out)side the polygons. See SetInsideOut().
+ * 
+ * It is possible to output a pure embedding or a pure removal.
+ *             
+ * Note:
+ * PointData is interpolated to output.
  * CellData is copied over to both constraint lines, new triangles
- *
- * @warning
- * z-values of the input vtkPolyData and the points defining the loops are
- * assumed to lie at z=constant. In other words, this filter assumes that the
- * data lies in a plane orthogonal to the z axis.
  *
  * @sa
  * vtkClipDataSet vtkClipPolyData

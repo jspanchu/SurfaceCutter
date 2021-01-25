@@ -689,9 +689,9 @@ namespace
         const vtkIdType& num_point_ids = child.num_point_ids;
         const auto& point_ids = child.point_ids;
 
-        bool rejected(true);
-        if (!passthrough)
+        if (!passthrough) // need to test in/out.
         {
+          bool rejected(true);
           vtkIdType loop_id(-1);
           for (auto& loop : loops)
           {
@@ -743,11 +743,11 @@ namespace
               rejected = false;
             }
           }
-        }
 
-        if (rejected)
-        {
-          continue; // to next triangle
+          if (rejected)
+          {
+            continue; // to next triangle
+          }
         }
 
         double dist2(0.);
@@ -1105,11 +1105,7 @@ int tscTriSurfaceCutter::RequestData(vtkInformation* vtkNotUsed(request),
 
   if (!this->Embed && !this->Remove) // do nothing
   {
-    output->CopyStructure(input);
-    output->GetPointData()->CopyAllocate(input->GetPointData());
-    output->GetPointData()->CopyData(input->GetPointData(), 0, input->GetNumberOfPoints());
-    output->GetCellData()->CopyAllocate(input->GetCellData());
-    output->GetCellData()->CopyData(input->GetCellData(), 0, input->GetNumberOfCells());
+    output->DeepCopy(input);
     return 1;
   }
 

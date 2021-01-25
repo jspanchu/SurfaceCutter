@@ -76,7 +76,7 @@ static void KeypressCallbackFunction(vtkObject* caller, long unsigned int vtkNot
   auto meshTransform = static_cast<vtkTransform*>(clientData);
 
   std::string key = iren->GetKeySym();
-
+  
   if (key == "Up")
     meshTransform->Translate(0., translateSpeed, 0.);
   else if (key == "Down")

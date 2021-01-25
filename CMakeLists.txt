@@ -13,9 +13,13 @@ if (NOT CMAKE_BUILD_TYPE)
   set_property(CACHE CMAKE_BUILD_TYPE PROPERTY STRINGS "Debug" "Release")
 endif ()
 
+include(CTest)
+include(GNUInstallDirs)
+
 option(TSC_BUILD_PARAVIEW_PLUGIN "Build a plugin to use SCut in ParaView." ON)
 option(TSC_BUILD_SHARED_LIBS     "Generate shared libraries instead of static ones" ON)
 option(TSC_BUILD_TEST            "Build test" ON)
+option(TSC_BUILD_BENCH           "Build benchmark app" ON)
 option(TSC_WRAP_PYTHON           "Generate and build python wrapper" ON)
 option(TSC_VERSIONED_INSTALL     "Install artifacts with versioned names." ON)
 set(TSC_CUSTOM_LIBRARY_SUFFIX    "<DEFAULT>"
@@ -28,9 +32,13 @@ mark_as_advanced(TSC_CUSTOM_LIBRARY_SUFFIX)
 set(BUILD_SHARED_LIBS ${TSC_BUILD_SHARED_LIBS})
 set(tsc_version_suffix "")
 
-if (TSC_VERSIONED_INSTALL)
-  set(tsc_version_suffix "-${TSC_VERSION_MAJOR}.${TSC_VERSION_MINOR}")
-endif ()
+if (TSC_BUILD_SHARED_LIBS)
+  set(CMAKE_WINDOWS_EXPORT_ALL_SYMBOLS ON)
+endif()
+
+if(TSC_BUILD_TEST)
+  set(BUILD_TESTING ON)
+endif()
 
 if (TSC_CUSTOM_LIBRARY_SUFFIX STREQUAL "<DEFAULT>")
   if (TSC_VERSIONED_INSTALL)
@@ -40,14 +48,16 @@ if (TSC_CUSTOM_LIBRARY_SUFFIX STREQUAL "<DEFAULT>")
   endif ()
 endif ()
 
+if (TSC_VERSIONED_INSTALL)
+  set(tsc_version_suffix "-${TSC_VERSION_MAJOR}.${TSC_VERSION_MINOR}")
+endif ()
+
 ## Find ParaView, otherwise VTK
 find_package(ParaView QUIET)
 if(NOT ParaView_FOUND)
   find_package(VTK)
 endif()
 message (STATUS "VTK_VERSION: ${VTK_VERSION}")
-
-include(GNUInstallDirs)
 
 # Install rpath for C++ and python wrapper.
 if(NOT DEFINED CMAKE_MACOSX_RPATH)
@@ -83,6 +93,7 @@ vtk_module_build(
   HEADERS_DESTINATION   "${CMAKE_INSTALL_INCLUDEDIR}/tsc${tsc_version_suffix}"
   CMAKE_DESTINATION     "${tsc_cmake_destination}"
   LIBRARY_NAME_SUFFIX   "${TSC_CUSTOM_LIBRARY_SUFFIX}"
+  TEST_DIRECTORY_NAME   NONE                                                 # Do not use vtk's testing.
   VERSION               "${TSC_VERSION}"
   SOVERSION             "${TSC_VERSION}"
 )
@@ -183,7 +194,32 @@ if(TSC_BUILD_PARAVIEW_PLUGIN)
   )
 endif()
 
-add_executable(tscBench tscBench.cpp)
-target_link_libraries(tscBench PRIVATE ${VTK_LIBRARIES} tscTriSurfaceCutter)
-VTK_MODULE_AUTOINIT(TARGETS tscBench MODULES ${VTK_LIBRARIES} tscTriSurfaceCutter)
+if(TSC_BUILD_BENCH)
+  add_executable(tscBench tscBench.cpp)
+  target_link_libraries(tscBench PUBLIC ${VTK_LIBRARIES} tscTriSurfaceCutter)
+  set_property(TARGET tscBench PROPERTY RUNTIME_OUTPUT_DIRECTORY ${PROJECT_BINARY_DIR}/bin)
+  VTK_MODULE_AUTOINIT(TARGETS tscBench MODULES ${VTK_LIBRARIES} tscTriSurfaceCutter)
+endif()
 
+# A stripped down simulation of VTK Testing, offline.
+if(TSC_BUILD_TEST)
+  enable_testing()
+  set(TEST_SRC_DIR  ${PROJECT_SOURCE_DIR}/tscTriSurfaceCutter/Testing)
+  set(TEST_DATA_FILES_FETCH_DIR ${PROJECT_SOURCE_DIR}/Testing/Data)
+  set(TEST_DATA_FILES_INPUT_DIR ${PROJECT_BINARY_DIR}/Testing/Data)
+  set(TEST_RUNTIME_DIR ${PROJECT_BINARY_DIR}/Testing)
+
+  add_executable(TesttscTriSurfaceCutter ${TEST_SRC_DIR}/TesttscTriSurfaceCutter.cxx)
+  target_link_libraries(TesttscTriSurfaceCutter PUBLIC ${VTK_LIBRARIES} tscTriSurfaceCutter)
+  set_property(TARGET TesttscTriSurfaceCutter PROPERTY RUNTIME_OUTPUT_DIRECTORY ${TEST_RUNTIME_DIR})
+  add_test(NAME TesttscTriSurfaceCutter COMMAND TesttscTriSurfaceCutter WORKING_DIRECTORY ${TEST_RUNTIME_DIR})
+  
+  foreach (i RANGE 5) # hard-coded
+    configure_file(${TEST_DATA_FILES_FETCH_DIR}/InOutFalse/InOutFalse_${i}.vtp ${TEST_DATA_FILES_INPUT_DIR}/InOutFalse/InOutFalse_${i}.vtp)
+    configure_file(${TEST_DATA_FILES_FETCH_DIR}/InOutTrue/InOutTrue_${i}.vtp ${TEST_DATA_FILES_INPUT_DIR}/InOutTrue/InOutTrue_${i}.vtp)
+  endforeach()
+  
+  configure_file(${TEST_DATA_FILES_FETCH_DIR}/InOutFalse.vtm ${TEST_DATA_FILES_INPUT_DIR}/InOutFalse.vtm)
+  configure_file(${TEST_DATA_FILES_FETCH_DIR}/InOutTrue.vtm ${TEST_DATA_FILES_INPUT_DIR}/InOutTrue.vtm)
+  configure_file(${TEST_DATA_FILES_FETCH_DIR}/Triangle.vtp ${TEST_DATA_FILES_INPUT_DIR}/Triangle.vtp)
+endif()

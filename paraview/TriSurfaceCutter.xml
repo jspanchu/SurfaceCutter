@@ -4,7 +4,8 @@
         <Documentation
             long_help="Cut a triangulated surface with one or more polygons."
             short_help="Cut triangulated surfaces with polygons">
-            This filter is geometrically based, unlike vtkClipDataSet and vtkClipPolyData.
+            This filter is geometrically based, unlike vtkClipDataSet and vtkClipPolyData
+            (both of which are scalar-based).
             
             It crops an input vtkPolyData consisting of triangles
             with loops specified by a second input containing polygons.

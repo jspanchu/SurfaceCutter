@@ -1,4 +1,4 @@
-#include "SurfaceCutter.h"
+#include "tscTriSurfaceCutter.h"
 #include <vtkArrayDispatch.h>
 #include <vtkCellData.h>
 #include <vtkCellIterator.h>
@@ -157,7 +157,7 @@ int compare(vtkSmartPointer<vtkPolyData> pdata1, vtkSmartPointer<vtkPolyData> pd
 
 int main()
 {
-  vtkNew<SurfaceCutter> surfCutter;
+  vtkNew<tscTriSurfaceCutter> surfCutter;
   vtkNew<vtkPolyData> triangle, loop;
   vtkNew<vtkPoints> tpoints, lPoints;
   vtkNew<vtkCellArray> tCell, lCell;
@@ -199,7 +199,7 @@ int main()
   std::vector<std::vector<vtkIdType>> testPolys = { { 0, 1, 2 }, { 0, 1, 2 }, { 0, 1, 2 },
     { 0, 1, 2 }, { 0, 1, 2, 3 }, { 0, 1, 2 } };
 
-  reader->SetFileName("data/InOutTrue.vtm");
+  reader->SetFileName("Data/InOutTrue.vtm");
   reader->Update();
   inOutTrueBlks->ShallowCopy(reader->GetOutput());
   for (unsigned short i = 0; i < 6; ++i)
@@ -224,7 +224,7 @@ int main()
 
   surfCutter->SetInsideOut(false);
 
-  reader->SetFileName("data/InOutFalse.vtm");
+  reader->SetFileName("Data/InOutFalse.vtm");
   reader->Update();
   inOutFalseBlks->ShallowCopy(reader->GetOutput());
   for (unsigned short i = 0; i < 6; ++i)
