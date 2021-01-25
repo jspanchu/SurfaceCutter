@@ -1,14 +1,10 @@
-# set(_paraview_add_plugin_MODULES_FILES TRUE)
-
-configure_file(TriSurfaceCutter.xml ${PROJECT_BINARY_DIR}/TriSurfaceCutter.xml)
-
 paraview_add_plugin(TriSurfaceCutter
     VERSION             ${TSC_VERSION}
     REQUIRED_ON_CLIENT
     REQUIRED_ON_SERVER
     MODULES             ${tsc_modules}
     # MODULE_FILES        ${tsc_module_files}
-    SERVER_MANAGER_XML  ${PROJECT_BINARY_DIR}/TriSurfaceCutter.xml
+    SERVER_MANAGER_XML  TriSurfaceCutter.xml
 )
 
 set_target_properties(TriSurfaceCutter

@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <iterator>
+#include <numeric>
 #include <set>
 #include <unordered_map>
 #include <unordered_set>
@@ -110,7 +111,7 @@ namespace
     ON_LINE
   };
 
-  // Convention: in a triangle- v: vertex, e: edge
+  // Convention: in a triangle - v: vertex, e: edge
   // with vertices v0--v1--v2,
   // e0 = v0--v1, e1 = v1--v2, e2 = v2--v0;
   const vtkIdType TRIEDGES[3][2] = { { 0, 1 }, { 1, 2 }, { 2, 0 } };
@@ -118,7 +119,7 @@ namespace
   const vtkIdType TRIOPPVERTS[3] = { 2, 0, 1 }; // vertex id opposite to an edge
   const vtkIdType TRIVERTS[3] = { 0, 1, 2 };
 
-  // Find if a point is on an edge of a triangle? INSIDE/outside ?
+  // Find if a point is on an edge of a triangle? is it inside/outside ?
   // Or exactly coincident with a vertex?
   BaryCentricType inTriangle(const double p[3], const double p0[3], const double p1[3],
     const double p2[3], double bary_coords[3], const double& tol, vtkIdType& v, vtkIdType& e)
@@ -189,19 +190,19 @@ namespace
   }
 
   // Quantify return status of vtkLine::Intersection(...)
-  IntersectType robustIntersect(const double* seg_p1, const double* seg_p2, const double* a1,
-    const double* a2, double px[3], const double& tol)
+  IntersectType robustIntersect(const double* p1, const double* p2, const double* q1,
+    const double* q2, double px[3], const double& tol)
   {
     double u(0.0), v(0.0);
-    int intersect = vtkLine::Intersection(seg_p1, seg_p2, a1, a2, u, v);
+    int intersect = vtkLine::Intersection(p1, p2, q1, q2, u, v);
 
     double u_proj[3] = { 0., 0., 0. };
     double v_proj[3] = { 0., 0., 0. };
 
-    for (unsigned short dim = 0; dim < 2; ++dim) // discard z
+    for (unsigned short dim = 0; dim < 2; ++dim) // ignore 3rd dim
     {
-      u_proj[dim] = seg_p1[dim] + u * (seg_p2[dim] - seg_p1[dim]);
-      v_proj[dim] = a1[dim] + v * (a2[dim] - a1[dim]);
+      u_proj[dim] = p1[dim] + u * (p2[dim] - p1[dim]);
+      v_proj[dim] = q1[dim] + v * (q2[dim] - q1[dim]);
     }
 
     double closest_dist = vtkMath::Distance2BetweenPoints(u_proj, v_proj);
@@ -213,40 +214,40 @@ namespace
     // 0: VTK_NO_INTERSECTION
     // 2: VTK_YES_INTERSECTION
     // 3: VTK_ON_LINE
-    if (intersect == 0)
+    if (!intersect)
       return IntersectType::NO_INTERSECTION;
     else if (intersect == 2 && closest_dist < tol2)
     {
       if (std::fabs(1.0 - u) <= tol && closest_dist < tol2)
       {
-        std::copy(seg_p2, seg_p2 + 3, px);
+        std::copy(p2, p2 + 3, px);
         return IntersectType::T_JUNCTION;
       }
       else if (std::fabs(1.0 - v) <= tol && closest_dist < tol2)
       {
-        std::copy(a2, a2 + 3, px);
+        std::copy(q2, q2 + 3, px);
         return IntersectType::T_JUNCTION;
       }
 
       if (std::fpclassify(u) == FP_ZERO && closest_dist < tol2)
       {
-        std::copy(seg_p1, seg_p1 + 3, px);
+        std::copy(p1, p1 + 3, px);
         return IntersectType::T_JUNCTION;
       }
       else if (std::fpclassify(v) == FP_ZERO && closest_dist < tol2)
       {
-        std::copy(a1, a1 + 3, px);
+        std::copy(q1, q1 + 3, px);
         return IntersectType::T_JUNCTION;
       }
 
       if (std::fabs(u) <= tol && closest_dist < tol2)
       {
-        std::copy(seg_p1, seg_p1 + 3, px);
+        std::copy(p1, p1 + 3, px);
         return IntersectType::T_JUNCTION;
       }
       else if (std::fabs(v) <= tol && closest_dist < tol2)
       {
-        std::copy(a1, a1 + 3, px);
+        std::copy(q1, q1 + 3, px);
         return IntersectType::T_JUNCTION;
       }
       else
@@ -258,7 +259,7 @@ namespace
     else if (intersect == 3 && closest_dist < tol2)
     {
       for (unsigned short dim = 0; dim < 3; ++dim)
-        px[dim] = a1[dim] + v * (a2[dim] - a1[dim]);
+        px[dim] = q1[dim] + v * (q2[dim] - q1[dim]);
 
       return IntersectType::ON_LINE;
     }
@@ -297,48 +298,66 @@ namespace
     }
   };
 
-  // A child is born when a parent triangle crosses a loop's edge.
+  // A child is born when a parent triangle/line crosses a loop's edge.
   struct Child
   {
+    /**
+     * @brief When a triangle(line) is cut by a loop polygon, it
+     *        births children triangles(lines)
+     */
     Child()
       : cx(0)
       , cy(0)
-      , num_point_ids(3)
       , point_ids()
       , bbox()
     {
-      point_ids.reserve(3);
     }
+
     Child(const double& cx_, const double& cy_, const vtkIdType* pts, const vtkIdType npts_,
       const double bounds[4])
       : cx(cx_)
       , cy(cy_)
-      , num_point_ids(npts_)
     {
-      point_ids.assign(pts, pts + num_point_ids);
+      point_ids->SetNumberOfIds(npts_);
+      std::copy(pts, pts + npts_, point_ids->GetPointer(0));
       bbox = vtkBoundingBox(bounds[0], bounds[1], bounds[2], bounds[3], 0.0, 0.0);
     }
-    double cx, cy;                    // centroid
-    vtkIdType num_point_ids;          // 3
-    std::vector<vtkIdType> point_ids; // the ids
-    vtkBoundingBox bbox;              // bbox of all points
+
+    Child(const double& cx_, const double& cy_, vtkIdList* pts, const double bounds[4])
+      : cx(cx_)
+      , cy(cy_)
+    {
+      point_ids->DeepCopy(pts);
+      bbox = vtkBoundingBox(bounds[0], bounds[1], bounds[2], bounds[3], 0.0, 0.0);
+    }
+
+    double cx, cy;               // centroid
+    vtkNew<vtkIdList> point_ids; // the ids
+    vtkBoundingBox bbox;         // bbox of all points
   };
 
-  // Implementation to fill a container with children triangles.
   struct GetChildrenImpl
   {
+    /**
+     * @brief Implementation to fill a container with children triangles.
+     * @tparam PointsArrT T
+     * @param points_arr  coordinates that make up parent triangle and acquired points
+     * @param tris point  ids that make up children triangles
+     * @param children    a container which will be filled
+     */
     template <typename PointsArrT, typename = vtk::detail::EnableIfVtkDataArray<PointsArrT>>
-    void operator()(PointsArrT* points_arr, vtkCellArray* tris, std::vector<Child>& children)
+    void operator()(PointsArrT* points_arr, vtkCellArray* polys, std::vector<Child>& children)
     {
-      const vtkIdType& num_tris = tris->GetNumberOfCells();
+      const vtkIdType& num_polys = polys->GetNumberOfCells();
       auto points = vtk::DataArrayTupleRange<3>(points_arr);
 
-      for (vtkIdType tri = 0; tri < num_tris; ++tri)
+      for (vtkIdType i = 0; i < num_polys; ++i)
       {
         const vtkIdType* point_ids = nullptr;
         vtkIdType num_point_ids(0);
-        tris->GetCellAtId(tri, num_point_ids, point_ids);
+        polys->GetCellAtId(i, num_point_ids, point_ids);
 
+        // a child requires it's bounds and centroid
         double bounds[4] = { VTK_DOUBLE_MAX, VTK_DOUBLE_MIN, VTK_DOUBLE_MAX, VTK_DOUBLE_MIN };
         double pc[3] = {};
         for (vtkIdType v = 0; v < num_point_ids; ++v)
@@ -358,26 +377,31 @@ namespace
         }
 
         for (unsigned short dim = 0; dim < 2; ++dim)
-          pc[dim] /= 3.0;
+          pc[dim] /= double(num_point_ids);
 
         children.emplace_back(pc[0], pc[1], point_ids, num_point_ids, bounds);
       }
     }
   };
 
-  // When a root triangle intersects a line segment, it births child triangles.
-  struct Root
+  struct Parent
   {
-    Root()
+    /**
+     * @brief When a root triangle(line) intersects a line segment, it births child
+     * triangles(lines).
+     */
+    Parent()
       : id(0)
     {
       children.reserve(10);
     }
-    Root(const vtkIdType& id_)
+
+    Parent(const vtkIdType& id_)
       : id(id_)
     {
       children.reserve(10);
     }
+
     vtkNew<vtkTriangle> repr;
     std::vector<Child> children;
     vtkIdType id;
@@ -389,22 +413,26 @@ namespace
       id = -1;
     }
 
-    void update(vtkCellArray* triangles)
+    void update(vtkCellArray* polys)
     {
       GetChildrenImpl worker;
       vtkDataArray* points_arr = repr->Points->GetData();
-      if (!dispatchR::Execute(points_arr, worker, triangles, children))
-        worker(points_arr, triangles, children);
+      if (!dispatchR::Execute(points_arr, worker, polys, children))
+        worker(points_arr, polys, children);
     }
   };
 
-  // Implementation to copy points of a root triangle.
+  //
   struct GetRootImpl
   {
-    // points1_arr: root triangle points (dst)
-    // points2_arr: dataset points (src)
-    // root_point_ids: indices into points1_arr that make up root
-    // unsafe, but eh, in this case, root_pt_ids->GetNumberOfIds() == 3. guaranteed.
+    /**
+     * @brief Implementation to copy points of a root triangle.
+     * @tparam PointsArrT1    Dest T
+     * @tparam PointsArrT2    Src T
+     * @param points1_arr     root triangle points (dst)
+     * @param points2_arr     dataset points (src)
+     * @param root_point_ids  indices into points1_arr that make up root
+     */
     template <typename PointsArrT1, typename = vtk::detail::EnableIfVtkDataArray<PointsArrT1>,
       typename PointsArrT2, typename = vtk::detail::EnableIfVtkDataArray<PointsArrT2>>
     void operator()(PointsArrT1* points1_arr, PointsArrT2* points2_arr, vtkIdList* root_point_ids)
@@ -412,7 +440,7 @@ namespace
       auto points_1 = vtk::DataArrayTupleRange<3>(points1_arr);
       auto points_2 = vtk::DataArrayTupleRange<3>(points2_arr);
 
-      for (vtkIdType i = 0; i < 3; ++i) // iterates over
+      for (vtkIdType i = 0; i < root_point_ids->GetNumberOfIds(); ++i)
       {
         const vtkIdType& pt = root_point_ids->GetId(i);
         std::copy(points_2[pt].begin(), points_2[pt].end(), points_1[i].begin());
@@ -423,16 +451,16 @@ namespace
   struct TriIntersect2dImpl
   {
     /**
-     * @brief Implementation to intersect(in 2D plane @z=0.0) a triangle with a bunch of line
-     * segments.
-     * @tparam PointsArrT1 triangles' points' data array type
-     * @tparam PointsArrT2 lines' points' data array type
-     * @param points1_arr triangles' points' data array
-     * @param points2_arr lines' points' data array
-     * @param lines point ids of line segments
-     * @param constraints list of segments that make up constraints
-     * @param is_acquired contains points that have been acquired from lines' points
-     * @param tol numeric tolerance for intersection math.
+     * @brief A brute-force implementation that intersect(in 2D plane @z=0.0) a triangle with a
+     * bunch of line segments.
+     * @tparam PointsArrT1  triangle's points' data array T
+     * @tparam PointsArrT2  loops' points' data array T
+     * @param points1_arr   triangle's points' data array
+     * @param points2_arr   loops' points' data array
+     * @param lines         point ids of line segments
+     * @param constraints   list of segments that make up constraints
+     * @param is_acquired   contains points that have been acquired from lines' points
+     * @param tol           numeric tolerance for intersection math.
      */
     template <typename PointsArrT1, typename = vtk::detail::EnableIfVtkDataArray<PointsArrT1>,
       typename PointsArrT2, typename = vtk::detail::EnableIfVtkDataArray<PointsArrT1>>
@@ -445,44 +473,47 @@ namespace
       auto points_1 = vtk::DataArrayTupleRange<3>(points1_arr);
       auto points_2 = vtk::DataArrayTupleRange<3>(points2_arr);
 
-      double p2d[3][3] = { { points_1[0][0], points_1[0][1], 0.0 },
-        { points_1[1][0], points_1[1][1], 0.0 }, { points_1[2][0], points_1[2][1], 0.0 } };
+      // clang-format off
+      double p2d[3][3] = 
+      { { points_1[0][0], points_1[0][1], 0.0 },
+        { points_1[1][0], points_1[1][1], 0.0 }, 
+        { points_1[2][0], points_1[2][1], 0.0 } };
 
-      double p3d[3][3] = { { points_1[0][0], points_1[0][1], points_1[0][2] },
+      double p3d[3][3] = 
+      { { points_1[0][0], points_1[0][1], points_1[0][2] },
         { points_1[1][0], points_1[1][1], points_1[1][2] },
         { points_1[2][0], points_1[2][1], points_1[2][2] } };
+      // clang-format on
 
       std::unordered_map<vtkIdType, vtkIdType> processed; // k: line pt, v: insertLoc
       const double tol2 = tol * tol;
 
       for (const auto& line : lines)
       {
-        const vtkIdType& l1 = line.first;
-        const vtkIdType& l2 = line.second;
+        const vtkIdType& a1 = line.first;
+        const vtkIdType& a2 = line.second;
 
-        double seg_p1[3] = { points_2[l1][0], points_2[l1][1], 0.0 };
-        double seg_p2[3] = { points_2[l2][0], points_2[l2][1], 0.0 };
+        double p1[3] = { points_2[a1][0], points_2[a1][1], 0.0 };
+        double p2[3] = { points_2[a2][0], points_2[a2][1], 0.0 };
 
-        vtkIdType l1v(-1), l2v(-1);
-        vtkIdType l1e(-1), l2e(-1);
+        vtkIdType a1v(-1), a2v(-1);
+        vtkIdType a1e(-1), a2e(-1);
 
         double p1_bary_coords[3] = {};
         double p2_bary_coords[3] = {};
 
-        const auto l1Pos =
-          inTriangle(seg_p1, p2d[0], p2d[1], p2d[2], p1_bary_coords, tol, l1v, l1e);
-        const auto l2Pos =
-          inTriangle(seg_p2, p2d[0], p2d[1], p2d[2], p2_bary_coords, tol, l2v, l2e);
+        const auto a1Pos = inTriangle(p1, p2d[0], p2d[1], p2d[2], p1_bary_coords, tol, a1v, a1e);
+        const auto a2Pos = inTriangle(p2, p2d[0], p2d[1], p2d[2], p2_bary_coords, tol, a2v, a2e);
 
-        const bool l1_inside = l1Pos == BaryCentricType::INSIDE;
-        const bool l2_inside = l2Pos == BaryCentricType::INSIDE;
-        const bool l1_on_edge = l1Pos == BaryCentricType::ON_EDGE;
-        const bool l2_on_edge = l2Pos == BaryCentricType::ON_EDGE;
-        const bool l1_on_vert = l1Pos == BaryCentricType::ON_VERTEX;
-        const bool l2_on_vert = l2Pos == BaryCentricType::ON_VERTEX;
+        const bool a1_inside = a1Pos == BaryCentricType::INSIDE;
+        const bool a2_inside = a2Pos == BaryCentricType::INSIDE;
+        const bool a1_on_edge = a1Pos == BaryCentricType::ON_EDGE;
+        const bool a2_on_edge = a2Pos == BaryCentricType::ON_EDGE;
+        const bool a1_on_vert = a1Pos == BaryCentricType::ON_VERTEX;
+        const bool a2_on_vert = a2Pos == BaryCentricType::ON_VERTEX;
 
         double px[3] = {};
-        std::set<vtkIdType> hits;
+        std::set<vtkIdType> hits; // will be used to record point ids that make up constraints.
         vtkIdType inserted(-1);
 
         for (const auto& e : TRIEDGES)
@@ -490,10 +521,10 @@ namespace
           const vtkIdType& v0 = e[0];
           const vtkIdType& v1 = e[1];
 
-          const double* a1 = p2d[v0];
-          const double* a2 = p2d[v1];
+          const double* q1 = p2d[v0];
+          const double* q2 = p2d[v1];
 
-          const auto type_of_intersection = robustIntersect(seg_p1, seg_p2, a1, a2, px, tol);
+          const auto type_of_intersection = robustIntersect(p1, p2, q1, q2, px, tol);
           if (type_of_intersection == IntersectType::PERFECT_CROSS)
           {
             interpZ(px, p3d[0], p3d[1], p3d[2]);
@@ -507,7 +538,7 @@ namespace
             for (const auto& v : TRIVERTS)
             {
               const double* a = p2d[v];
-              double dist2 = vtkLine::DistanceToLine(a, seg_p1, seg_p2);
+              double dist2 = vtkLine::DistanceToLine(a, p1, p2);
               if (dist2 < minDist)
               {
                 minDist = dist2;
@@ -517,33 +548,33 @@ namespace
             if (tgt >= 0 && minDist <= tol2)
             {
               hits.insert(tgt);
-              double dist2_p1 = vtkMath::Distance2BetweenPoints(p2d[tgt], seg_p1);
-              double dist2_p2 = vtkMath::Distance2BetweenPoints(p2d[tgt], seg_p2);
+              double dist2_p1 = vtkMath::Distance2BetweenPoints(p2d[tgt], p1);
+              double dist2_p2 = vtkMath::Distance2BetweenPoints(p2d[tgt], p2);
               if (dist2_p1 < tol2)
                 is_acquired.insert(tgt);
               else if (dist2_p2 < tol2)
                 is_acquired.insert(tgt);
             }
-            else if (l1_on_edge)
+            else if (a1_on_edge)
             {
-              if (processed.find(l1) == processed.end())
+              if (processed.find(a1) == processed.end())
               {
-                std::copy(seg_p1, seg_p1 + 3, px);
+                std::copy(p1, p1 + 3, px);
                 interpZ(px, p3d[0], p3d[1], p3d[2], p1_bary_coords);
                 inserted = points1_arr->InsertNextTuple(px);
-                processed[l1] = inserted;
+                processed[a1] = inserted;
                 hits.insert(inserted);
                 is_acquired.insert(inserted);
               }
             }
-            else if (l2_on_edge)
+            else if (a2_on_edge)
             {
-              if (processed.find(l2) == processed.end())
+              if (processed.find(a2) == processed.end())
               {
-                std::copy(seg_p2, seg_p2 + 3, px);
+                std::copy(p2, p2 + 3, px);
                 interpZ(px, p3d[0], p3d[1], p3d[2], p2_bary_coords);
                 inserted = points1_arr->InsertNextTuple(px);
-                processed[l2] = inserted;
+                processed[a2] = inserted;
                 hits.insert(inserted);
                 is_acquired.insert(inserted);
               }
@@ -558,117 +589,144 @@ namespace
         }
         else if (hits.size() == 1)
         {
-          if (l1_inside || l1_on_edge)
+          if (a1_inside || a1_on_edge)
           {
-            if (processed.find(l1) == processed.end())
+            if (processed.find(a1) == processed.end())
             {
-              std::copy(seg_p1, seg_p1 + 3, px);
+              std::copy(p1, p1 + 3, px);
               interpZ(px, p3d[0], p3d[1], p3d[2], p1_bary_coords);
               inserted = points1_arr->InsertNextTuple(px);
-              processed[l1] = inserted;
+              processed[a1] = inserted;
             }
-            constraints.emplace_back(*(hits.begin()), processed[l1]);
-            is_acquired.insert(processed[l1]);
+            constraints.emplace_back(*(hits.begin()), processed[a1]);
+            is_acquired.insert(processed[a1]);
           }
-          else if (l1_on_vert)
+          else if (a1_on_vert)
           {
-            processed[l1] = l1v;
-            constraints.emplace_back(*(hits.begin()), l1v);
-            is_acquired.insert(l1v);
+            processed[a1] = a1v;
+            constraints.emplace_back(*(hits.begin()), a1v);
+            is_acquired.insert(a1v);
           }
 
-          if (l2_inside || l2_on_edge)
+          if (a2_inside || a2_on_edge)
           {
-            if (processed.find(l2) == processed.end())
+            if (processed.find(a2) == processed.end())
             {
-              std::copy(seg_p2, seg_p2 + 3, px);
+              std::copy(p2, p2 + 3, px);
               interpZ(px, p3d[0], p3d[1], p3d[2], p2_bary_coords);
               inserted = points1_arr->InsertNextTuple(px);
-              processed[l2] = inserted;
+              processed[a2] = inserted;
             }
-            constraints.emplace_back(*(hits.begin()), processed[l2]);
-            is_acquired.insert(processed[l2]);
+            constraints.emplace_back(*(hits.begin()), processed[a2]);
+            is_acquired.insert(processed[a2]);
           }
-          else if (l2_on_vert)
+          else if (a2_on_vert)
           {
-            processed[l2] = l2v;
-            constraints.emplace_back(*(hits.begin()), l2v);
-            is_acquired.insert(l2v);
+            processed[a2] = a2v;
+            constraints.emplace_back(*(hits.begin()), a2v);
+            is_acquired.insert(a2v);
           }
         }
         else if (!hits.size())
         {
           // the last hope!
-          bool force = (l1_inside && l2_inside) || (l1_inside && l2_on_edge) ||
-            (l1_on_edge && l2_inside) || (l1_on_edge && l2_on_edge) || (l1_inside && l2_on_vert) ||
-            (l1_on_vert && l2_inside) || (l1_on_edge && l2_on_vert) || (l1_on_vert && l2_on_edge) ||
-            (l1_on_vert && l2_on_vert);
+          bool force = (a1_inside && a2_inside) || (a1_inside && a2_on_edge) ||
+            (a1_on_edge && a2_inside) || (a1_on_edge && a2_on_edge) || (a1_inside && a2_on_vert) ||
+            (a1_on_vert && a2_inside) || (a1_on_edge && a2_on_vert) || (a1_on_vert && a2_on_edge) ||
+            (a1_on_vert && a2_on_vert);
           if (force)
           {
-            if (processed.find(l1) == processed.end())
+            if (processed.find(a1) == processed.end())
             {
-              std::copy(seg_p1, seg_p1 + 3, px);
+              std::copy(p1, p1 + 3, px);
               interpZ(px, p3d[0], p3d[1], p3d[2], p1_bary_coords);
               inserted = points1_arr->InsertNextTuple(px);
-              processed[l1] = inserted;
+              processed[a1] = inserted;
             }
-            if (processed.find(l2) == processed.end())
+            if (processed.find(a2) == processed.end())
             {
-              std::copy(seg_p2, seg_p2 + 3, px);
+              std::copy(p2, p2 + 3, px);
               interpZ(px, p3d[0], p3d[1], p3d[2], p2_bary_coords);
               inserted = points1_arr->InsertNextTuple(px);
-              processed[l2] = inserted;
+              processed[a2] = inserted;
             }
-            constraints.emplace_back(processed[l1], processed[l2]);
-            is_acquired.insert(processed[l1]);
-            is_acquired.insert(processed[l2]);
+            constraints.emplace_back(processed[a1], processed[a2]);
+            is_acquired.insert(processed[a1]);
+            is_acquired.insert(processed[a2]);
           }
         }
       }
     }
   };
 
+  /**
+   * @brief Robust point-in-polygon test based on
+   * [this](https://wrf.ecse.rpi.edu/Research/Short_Notes/pnpoly.html#The%20C%20Code)
+   * @tparam ArrT         T
+   * @param loop_pt_ids   Indices into points
+   * @param points        coordinates
+   * @param test_y        test y-coordinate
+   * @param test_x        test x-coordinate
+   * @return
+   */
+  template <typename ArrT>
+  bool isInside(vtkIdList* loop_pt_ids, vtk::detail::ConstTupleIterator<ArrT, 3>& points,
+    const double& test_x, const double& test_y)
+  {
+    bool inside{ false };
+    const vtkIdType num_loop_pts(loop_pt_ids->GetNumberOfIds());
+    for (vtkIdType i = 0, j = num_loop_pts - 1; i < num_loop_pts; j = i++)
+    {
+      const double& ix = points[loop_pt_ids->GetId(i)][0];
+      const double& iy = points[loop_pt_ids->GetId(i)][1];
+      const double& jx = points[loop_pt_ids->GetId(j)][0];
+      const double& jy = points[loop_pt_ids->GetId(j)][1];
+
+      if (((iy > test_y) != (jy > test_y)) && (test_x < (jx - ix) * (test_y - iy) / (jy - iy) + ix))
+        inside = !inside;
+    }
+    return inside;
+  }
+
   struct PopTrisImpl
   {
     /**
      * @brief Pops helper's triangles to populate output structures and arrays.
      *
-     * @tparam PointsArrT1 triangles' points' data array type
-     * @tparam PointsArrT2 loops' points' data array type
-     * @tparam InOutsArrT  integral data array type
-     * @param points1_arr triangles' points' data array
-     * @param points2_arr loops' points' data array
-     * @param inside_out_arr a data array that describes inside out nature of each loop polygon
-     * @param loops [<bbox, ptIds>] for each loop polygon
-     * @param is_acquired indicates points that were acquired
-     * @param constraints a list of line segments that were constrained
-     * @param parent the og triangle that we're processing rn
-     * @param in_pd input point data
-     * @param out_pd output point data
-     * @param out_tris output tris
-     * @param out_lines output lines
-     * @param in_cd input cell data
-     * @param out_tris_cd output cell data (for triangles)
-     * @param out_lines_cd output cell data (for lines)
-     * @param locator used to insert unique points in output
-     * @param acquisition to color acquired points in output
-     * @param passthrough avoid in/out tests
+     * @tparam PointsArrT1    triangles' points' data array type
+     * @tparam PointsArrT2    loops' points' data array type
+     * @tparam InOutsArrT     integral data array type
+     * @param points1_arr     triangles' points' data array
+     * @param points2_arr     loops' points' data array
+     * @param inside_out_arr  a data array that describes inside out nature of each loop polygon
+     * @param loops           [<bbox, ptIds>] for each loop polygon
+     * @param is_acquired     indicates points that were acquired
+     * @param constraints     a list of line segments that were constrained
+     * @param parent          the og triangle that we're processing rn
+     * @param in_pd           input point data
+     * @param out_pd          output point data
+     * @param out_tris        output tris
+     * @param out_lines       output lines
+     * @param in_cd           input cell data
+     * @param out_tris_cd     output cell data (for triangles)
+     * @param out_lines_cd    output cell data (for lines)
+     * @param locator         used to insert unique points in output
+     * @param acquisition     colors acquired points in output
+     * @param fallthrough     avoid in/out tests
      *
-     * @note Remove triangles if:
-     * 1. inside_out is set, reject triangles outside all polygons.
-     * 2. inside_out is unset, reject triangles inside at-least one polygon.
+     *
+     * @note Accept triangles in two passes. Inverted followed by uninverted.
+     *
      */
-    template <typename PointsArrT1, typename = vtk::detail::EnableIfVtkDataArray<PointsArrT1>,
-      typename PointsArrT2, typename = vtk::detail::EnableIfVtkDataArray<PointsArrT2>>
+    template <typename PointsArrT1, typename PointsArrT2>
     void operator()(PointsArrT1* points1_arr, PointsArrT2* points2_arr,
       vtkTypeInt32Array* inside_out_arr, const LoopsInfoType& loops,
       const std::unordered_set<vtkIdType>& is_acquired, const SegmentsType& constraints,
-      Root& parent, vtkPointData* in_pd, vtkPointData* out_pd, vtkCellArray* out_tris,
+      Parent& parent, vtkPointData* in_pd, vtkPointData* out_pd, vtkCellArray* out_tris,
       vtkCellArray* out_lines, vtkCellData* in_cd, vtkCellData* out_tris_cd,
       vtkCellData* out_lines_cd, vtkIncrementalPointLocator* locator,
-      vtkUnsignedCharArray* acquisition, const bool& passthrough)
+      vtkUnsignedCharArray* acquisition, const bool& fallthrough)
     {
-      // throw std::logic_error("The method or operation is not implemented.");
       auto points_1 = vtk::DataArrayTupleRange<3>(points1_arr);
       auto points_2 = vtk::DataArrayTupleRange<3>(points2_arr);
       auto inside_outs = vtk::DataArrayValueRange<1>(inside_out_arr);
@@ -678,75 +736,60 @@ namespace
       const vtkIdType& num_points = root_tri->GetPoints()->GetNumberOfPoints();
       auto& children = parent.children;
       const vtkIdType& root_id = parent.id;
-      std::vector<vtkIdType> old_to_new_pt_ids(
-        num_points, -1); // mapping from triangle's old point ids to those inserted.
+      std::vector<vtkIdType> old_to_new_pt_ids(num_points, -1);
 
       for (auto& child : children)
       {
-        const double& test_x = child.cx;
-        const double& test_y = child.cy;
-        vtkBoundingBox& tri_bbox = child.bbox;
-        const vtkIdType& num_point_ids = child.num_point_ids;
-        const auto& point_ids = child.point_ids;
-
-        if (!passthrough) // need to test in/out.
+        if (!fallthrough)
         {
-          bool rejected(true);
-          vtkIdType loop_id(-1);
-          for (auto& loop : loops)
+          bool rejected{ false };
+
+          const double& test_x = child.cx;
+          const double& test_y = child.cy;
+          auto& tri_bbox = child.bbox;
+
+          // reject this child if it lies inside at-least one polygon that is not inverted.
+          for (std::size_t loop_id = 0; loop_id < loops.size(); ++loop_id)
           {
-            ++loop_id;
-            const vtkBoundingBox& loop_bbox = loop.first;
-            vtkIdList* loop_pt_ids = loop.second;
             const int& inside_out = inside_outs[loop_id];
 
-            // the easy-way; effective when inside out is unset. (non-default)
             if (!inside_out)
             {
-              if (!(loop_bbox.Contains(tri_bbox) || loop_bbox.Intersects(tri_bbox)))
+              auto& loop = loops[loop_id];
+              // the easy-way; effective when inside out is unset. (non-default)
+              if (!(loop.first.Contains(tri_bbox) || loop.first.Intersects(tri_bbox)))
               {
-                rejected = false;
-                continue;
+                rejected |= false;
+              }
+              else
+              {
+                // the hard-way;
+                rejected |= isInside(loop.second.Get(), points_2.cbegin(), test_x, test_y);
               }
             }
+          }
 
-            // the hard-way; default
-            // taken from
-            // [here](https://wrf.ecse.rpi.edu/Research/Short_Notes/pnpoly.html#The%20C%20Code)
-            bool inside = false;
-            vtkIdType num_loop_pts(loop_pt_ids->GetNumberOfIds());
-            const vtkIdType* loopPtsPtr = loop_pt_ids->GetPointer(0);
-            for (vtkIdType i = 0, j = num_loop_pts - 1; i < num_loop_pts; j = i++)
+          // if not yet rejected, remove if outside all inverted polygons
+          if (!rejected)
+          {
+            for (std::size_t loop_id = 0; loop_id < loops.size(); ++loop_id)
             {
-              const double ix = points_2[loopPtsPtr[i]][0];
-              const double iy = points_2[loopPtsPtr[i]][1];
-              const double jx = points_2[loopPtsPtr[j]][0];
-              const double jy = points_2[loopPtsPtr[j]][1];
+              const int& inside_out = inside_outs[loop_id];
+              if (inside_out)
+              {
+                if (loop_id == 0)
+                  rejected = true; // initialize
 
-              if (((iy > test_y) != (jy > test_y)) &&
-                (test_x < (jx - ix) * (test_y - iy) / (jy - iy) + ix))
-                inside = !inside;
-            }
-            bool outside = !inside;
-            
-            if (inside_out)
-            {
-              rejected &= outside;
-            }
-            else if (inside)
-            {
-              rejected = true;
-              break;
-            }
-            else
-            {
-              rejected = false;
+                const auto& loop = loops[loop_id];
+                // the hard-way; default
+                rejected &= !isInside(loop.second.Get(), points_2.cbegin(), test_x, test_y);
+              }
             }
           }
 
           if (rejected)
           {
-            continue; // to next triangle
+            continue;
           }
         }
 
@@ -757,25 +800,40 @@ namespace
         int sub_id(0);
         vtkIdType new_pt_id(-1);
 
+        vtkCellArray* out_cells = nullptr;
+        vtkCellData* out_cd = nullptr;
         // insert triangles
-        out_tris->InsertNextCell(num_point_ids);
-        for (const auto& pt : point_ids) // of a triangle
+        if (child.point_ids->GetNumberOfIds() > 2)
         {
-          const double p[3] = { points_1[pt][0], points_1[pt][1], points_1[pt][2] };
-          if (locator->InsertUniquePoint(p, new_pt_id))
-          {
-            root_tri->EvaluatePosition(p, closest, sub_id, parametric_coords, dist2, weights);
-            out_pd->InterpolatePoint(in_pd, new_pt_id, root_pt_ids, weights);
-
-            if (is_acquired.find(pt) != is_acquired.end())
-              acquisition->InsertNextValue('\001');
-            else
-              acquisition->InsertNextValue('\000');
-          }
-          old_to_new_pt_ids[pt] = new_pt_id;
-          out_tris->InsertCellPoint(new_pt_id);
+          out_cells = out_tris;
+          out_cd = out_tris_cd;
         }
-        out_tris_cd->InsertNextTuple(root_id, in_cd);
+        else if (child.point_ids->GetNumberOfIds() == 2)
+        {
+          out_cells = out_lines;
+          out_cd = out_lines_cd;
+        }
+        if (out_cells && out_cd)
+        {
+          out_cells->InsertNextCell(child.point_ids->GetNumberOfIds());
+          for (const auto& pt : *(child.point_ids))
+          {
+            const double p[3] = { points_1[pt][0], points_1[pt][1], points_1[pt][2] };
+            if (locator->InsertUniquePoint(p, new_pt_id))
+            {
+              root_tri->EvaluatePosition(p, closest, sub_id, parametric_coords, dist2, weights);
+              out_pd->InterpolatePoint(in_pd, new_pt_id, root_pt_ids, weights);
+
+              if (is_acquired.find(pt) != is_acquired.end())
+                acquisition->InsertNextValue('\001');
+              else
+                acquisition->InsertNextValue('\000');
+            }
+            old_to_new_pt_ids[pt] = new_pt_id;
+            out_cells->InsertCellPoint(new_pt_id);
+          }
+          out_cd->InsertNextTuple(root_id, in_cd);
+        }
       }
 
       // insert line segments
@@ -784,7 +842,7 @@ namespace
         const vtkIdType line[2] = { old_to_new_pt_ids[edge.first], old_to_new_pt_ids[edge.second] };
         if (line[0] < 0 || line[1] < 0)
         {
-          //__debugbreak(); // triangle with this constraint got rejected ?
+          //__debugbreak(); // triangle with this constraint was rejected?
           continue;
         }
 
@@ -797,10 +855,10 @@ namespace
   struct ApplyConstraintImpl
   {
     /**
-     * @brief Construct a new Apply Constraint Impl object.
-     * @param mesh input mesh
-     * @param vl a vertex id into mesh
-     * @param vm another vertex id into mesh
+     * @brief Construct a new functor object.
+     * @param mesh  input mesh
+     * @param vl    a vertex id into mesh
+     * @param vm    another vertex id into mesh
      */
     ApplyConstraintImpl(
       vtkSmartPointer<vtkPolyData> mesh_, const vtkIdType& vl_, const vtkIdType& vm_)
@@ -818,9 +876,9 @@ namespace
      * vtkDelaunay2D's constraint section runs into infinite recursion for certain corner cases.
      * This implementation is no angel either. But, it does the job.
      *
-     * @tparam PointsArrT triangles' points' data array type
-     * @param points_arr triangles' points' data array
-     * @param tol numeric tolerance for intersection math
+     * @tparam PointsArrT   triangles' points' data array type
+     * @param points_arr    triangles' points' data array
+     * @param tol           numeric tolerance for intersection math
      */
     template <typename PointsArrT, typename = vtk::detail::EnableIfVtkDataArray<PointsArrT>>
     void operator()(PointsArrT* points_arr, const double& tol)
@@ -941,7 +999,6 @@ namespace
       , in_loop_points(in_loop_points_)
       , acquisition(acquisition_)
     {
-      tris->InsertNextCell(3, TRIVERTS);
       input->SetPoints(parent.repr->Points);
       del2d->SetProjectionPlaneMode(VTK_DELAUNAY_XY_PLANE);
       del2d->SetInputData(input);
@@ -952,17 +1009,44 @@ namespace
      * @brief Pop triangles that were birthed after `push()->update()` into output data structures.
      *
      */
-    void pop(const bool& passthrough)
+    void pop(const bool& fallthrough)
     {
       PopTrisImpl worker;
       vtkDataArray* points1_arr = parent.repr->Points->GetData();
       vtkDataArray* points2_arr = in_loop_points->GetData();
       if (!dispatchRR::Execute(points1_arr, points2_arr, worker, inside_outs, loops_info_holder,
             is_acquired, constraints, parent, in_pd, out_pd, out_tris, out_lines, in_cd,
-            out_tris_cd, out_lines_cd, locator, acquisition, passthrough))
+            out_tris_cd, out_lines_cd, locator, acquisition, fallthrough))
         worker(points1_arr, points2_arr, inside_outs, loops_info_holder, is_acquired, constraints,
           parent, in_pd, out_pd, out_tris, out_lines, in_cd, out_tris_cd, out_lines_cd, locator,
-          acquisition, passthrough);
+          acquisition, fallthrough);
+    }
+
+    /**
+     * @brief Push a 'root' triangle for processing.
+     *
+     * @param point_ids     Point ids
+     * @param num_point_ids Number of points
+     * @param root_idx      cell id from input
+     */
+    void push(const vtkIdType* point_ids, const vtkIdType num_point_ids, const vtkIdType& root_idx)
+    {
+      parent.id = root_idx;
+      parent.children.clear();
+
+      parent.repr->PointIds->SetNumberOfIds(num_point_ids);
+      std::copy(point_ids, point_ids + num_point_ids, parent.repr->PointIds->GetPointer(0));
+
+      std::vector<vtkIdType> cell_pt_ids(num_point_ids);
+      std::iota(cell_pt_ids.begin(), cell_pt_ids.end(), 0);
+      polys->InsertNextCell(num_point_ids, cell_pt_ids.data());
+
+      vtkPoints* root_points = parent.repr->Points;
+      vtkDataArray* points1_arr = root_points->GetData();
+      vtkDataArray* points2_arr = in_points->GetData();
+      GetRootImpl worker;
+      if (!dispatchRR::Execute(points1_arr, points2_arr, worker, parent.repr->PointIds))
+        worker(points1_arr, points2_arr, parent.repr->PointIds);
     }
 
     /**
@@ -983,6 +1067,8 @@ namespace
       parent.repr->PointIds->SetId(1, *v1);
       parent.repr->PointIds->SetId(2, *v2);
 
+      polys->InsertNextCell(3, TRIVERTS);
+
       vtkPoints* root_points = parent.repr->Points;
       vtkDataArray* points1_arr = root_points->GetData();
       vtkDataArray* points2_arr = in_points->GetData();
@@ -1000,8 +1086,7 @@ namespace
       constraints.clear();
       is_acquired.clear();
       parent.reset();
-      tris->Reset();
-      tris->InsertNextCell(3, TRIVERTS);
+      polys->Reset();
     }
 
     /**
@@ -1045,7 +1130,7 @@ namespace
                 }
               }
             }
-            tris->ShallowCopy(output->GetPolys());
+            polys->ShallowCopy(output->GetPolys());
           }
         }
       }
@@ -1073,14 +1158,14 @@ namespace
      *        else, copy parent triangle.
      *
      */
-    inline void update() { parent.update(tris); }
+    inline void update() { parent.update(polys); }
 
-    Root parent;
+    Parent parent;
     SegmentsType constraints;
     std::unordered_set<vtkIdType> is_acquired;
     const LoopsInfoType& loops_info_holder;
     vtkTypeInt32Array* inside_outs;
-    vtkNew<vtkCellArray> tris;
+    vtkNew<vtkCellArray> polys;
     vtkNew<vtkDelaunay2D> del2d;
     vtkNew<vtkPolyData> input, output;
     vtkCellArray *out_tris = nullptr, *out_lines = nullptr;
@@ -1264,9 +1349,6 @@ int tscTriSurfaceCutter::RequestData(vtkInformation* vtkNotUsed(request),
 
         if (num_point_ids != 3)
         {
-          vtkWarningMacro(<< "Cannot cookie cut cell " << cell_id << " with " << num_point_ids
-                          << " points"
-                          << ". Please triangulate with vtkTriangleFilter.");
           continue;
         }
 
@@ -1299,6 +1381,15 @@ int tscTriSurfaceCutter::RequestData(vtkInformation* vtkNotUsed(request),
   }
   vtkDebugMacro(<< "Obtained loop edge bounding boxes");
 
+  if (in_pd->HasArray("Acquired"))
+  {
+    in_pd->RemoveArray("Acquired");
+  }
+  if (in_cd->HasArray("Constrained"))
+  {
+    in_cd->RemoveArray("Constrained");
+  }
+
   vtkNew<vtkUnsignedCharArray> acquisition;
   acquisition->SetName("Acquired");
   acquisition->SetNumberOfComponents(1);
@@ -1327,36 +1418,37 @@ int tscTriSurfaceCutter::RequestData(vtkInformation* vtkNotUsed(request),
     cells_iter->GetCurrentCell(num_point_ids, point_ids);
     vtkDebugMacro(<< "Npts: " << num_point_ids);
 
-    if (num_point_ids != 3)
-    {
-      vtkWarningMacro(<< "Cannot cookie cut cell " << cell_id << " with " << num_point_ids
-                      << " points"
-                      << ". Please triangulate with vtkTriangleFilter.");
-      continue;
-    }
-
     // provide
-    vtkDebugMacro(<< "Push " << point_ids[0] << point_ids[1] << point_ids[2]);
-    helper.push(point_ids, point_ids + 1, point_ids + 2, cell_id);
+    helper.push(point_ids, num_point_ids, cell_id);
 
-    // embed
-    const auto& cross_edges = can_cross.find(cell_id);
-    if ((cross_edges != can_cross.end()) && this->Embed)
+    if (num_point_ids == 3)
     {
-      const SegmentsType& loop_edges = cross_edges->second;
-      vtkDebugMacro(<< "Crosses " << loop_edges.size() << " edges");
+      // embed
+      const auto& cross_edges = can_cross.find(cell_id);
+      if ((cross_edges != can_cross.end()) && this->Embed)
+      {
+        const SegmentsType& loop_edges = cross_edges->second;
+        vtkDebugMacro(<< "Crosses " << loop_edges.size() << " edges");
 
-      vtkDebugMacro(<< "Intersect with line, tol: " << this->Tolerance);
-      helper.triIntersect(loop_edges, this->Tolerance);
+        vtkDebugMacro(<< "Intersect with line, tol: " << this->Tolerance);
+        helper.triIntersect(loop_edges, this->Tolerance);
 
-      vtkDebugMacro(<< "Triangulate, tol: " << this->Tolerance);
-      helper.triangulate(this->Tolerance);
+        vtkDebugMacro(<< "Triangulate, tol: " << this->Tolerance);
+        helper.triangulate(this->Tolerance);
+      }
+      helper.update();
+
+      // accept/reject
+      vtkDebugMacro(<< "Popping .. ");
+      helper.pop(!this->Remove);
     }
-    helper.update();
+    else
+    {
+      helper.update();
+      vtkDebugMacro(<< "Popping .. ");
+      helper.pop(true); // let the parent fall through
+    }
 
-    // accept/reject
-    vtkDebugMacro(<< "Popping .. ");
-    helper.pop(!this->Remove);
     helper.reset();
 
     if (!(cell_id % report_every))
@@ -1385,10 +1477,10 @@ int tscTriSurfaceCutter::RequestData(vtkInformation* vtkNotUsed(request),
   vtkSmartPointer<vtkCellData> out_cd = output->GetCellData();
   out_lines_cd->Squeeze();
   out_tris_cd->Squeeze();
-  out_cd->CopyAllocate(out_lines_cd, num_out_cells);
-  out_cd->CopyData(out_lines_cd, 0, num_lines, 0);
-  out_cd->CopyData(out_tris_cd, num_lines, num_tris, 0);
-  out_cd->Squeeze();
+  // out_cd->CopyAllocate(out_lines_cd, num_out_cells);
+  // out_cd->CopyData(out_lines_cd, 0, num_lines, 0);
+  // out_cd->CopyData(out_tris_cd, num_lines, num_tris, 0);
+  // out_cd->Squeeze();
 
   if (this->ColorLoopEdges)
   {
