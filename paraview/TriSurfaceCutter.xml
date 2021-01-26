@@ -14,7 +14,7 @@
             coincident with a mesh point/edge.
 
             It computes an **embedding** of the loop polygons' edges upon the mesh 
-            followed by **removal** of triangles *in(out)side the polygons. See SetInsideOut().
+            followed by **removal** of triangles **in(out)side** the polygons. See SetInsideOut().
 
             It is possible to output a pure embedding or a pure removal.
             
@@ -38,9 +38,7 @@
                 It should ideally have only cells of type VTK_TRIANGLE.
                 
                 Note:
-                Before you use this filter, if
-                1. input is not a pure triangulation, pre-process w/ TriangleFilter/Delaunay2D. 
-                2. input has cells of type VTK_TRIANGLE_STRIP, pre-process w/ Stripper.
+                Cells other than triangles will be passed through to output.
             </Documentation>
         </InputProperty>
 

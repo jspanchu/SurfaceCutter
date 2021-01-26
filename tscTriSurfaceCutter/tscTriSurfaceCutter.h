@@ -20,6 +20,9 @@
  * It computes an **embedding** of the loop polygons' edges upon the mesh 
  * followed by **removal** of triangles *in(out)side the polygons. See SetInsideOut().
  * 
+ * Linear cells other than triangles will be passed through.
+ * Line segments and polylines from input will be marked as constraints.
+ * 
  * It is possible to output a pure embedding or a pure removal.
  *             
  * Note:
@@ -32,14 +35,16 @@
  */
 
 #include <vtkPolyDataAlgorithm.h>
+#include <tscTriSurfaceCutterModule.h>
 
 #include "vtkAbstractCellLocator.h"
 #include "vtkIncrementalPointLocator.h"
+#include "vtkTriangle.h"
 #include "vtkSmartPointer.h"
 
 class vtkPolyData;
 
-class tscTriSurfaceCutter : public vtkPolyDataAlgorithm {
+class TSCTRISURFACECUTTER_EXPORT tscTriSurfaceCutter : public vtkPolyDataAlgorithm {
 public:
   /**
    * Construct object with tolerance 1.0e-6, inside out set to true,
@@ -184,3 +189,48 @@ private:
   tscTriSurfaceCutter(const tscTriSurfaceCutter &) = delete;
   void operator=(const tscTriSurfaceCutter &) = delete;
 };
+
+namespace tsc_detail
+{
+
+  // A child is born when a parent triangle/line crosses a loop's edge.
+  struct Child
+  {
+    /**
+     * @brief When a triangle(line) is cut by a loop polygon, it
+     *        births children triangles(lines)
+     */
+    Child();
+    Child(const double& cx_, const double& cy_, const vtkIdType* pts, const vtkIdType npts_,
+      const double bounds[4]);
+    Child(const double& cx_, const double& cy_, vtkIdList* pts, const double bounds[4]);
+
+    double cx, cy;               // centroid
+    vtkNew<vtkIdList> point_ids; // the ids
+    vtkBoundingBox bbox;         // bbox of all points
+  };
+
+  class Parent : public vtkGenericCell
+  {
+  public:
+    static Parent* New();
+    vtkTypeMacro(Parent, vtkGenericCell);
+    void Reset();
+    void UpdateChildren(vtkCellArray* polys);
+
+    std::vector<Child> children;
+    vtkIdType cellId;
+
+  protected:
+    /**
+     * @brief When a root triangle(line) intersects a line segment, it births child
+     * triangles(lines).
+     */
+    Parent();
+    ~Parent() override;
+
+  private:
+    Parent(const Parent&) = delete;
+    void operator=(const Parent&) = delete;
+  };
+}
