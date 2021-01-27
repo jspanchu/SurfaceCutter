@@ -146,8 +146,8 @@ int Parse(char** argv, std::string& meshFile, std::string& loopsFile, bool& insi
 int main(int argc, char** argv)
 {
   bool useCookieCutter(false), movable(true), useClipDataSet(false), insideOut(true);
-  std::string meshFile = "data/Triangle.vtp";
-  std::string loopsFile = "data/Case5.vtp";
+  std::string meshFile = "Data/Triangle.vtp";
+  std::string loopsFile = "Data/Case5.vtp";
 
   const int invalidArgs =
     Parse(argv, meshFile, loopsFile, insideOut, useCookieCutter, useClipDataSet, movable, argc);
