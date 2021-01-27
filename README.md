@@ -5,8 +5,8 @@ Cut triangulated surfaces with 2D loop polygons.
 ```shell
 mkdir build
 cd build
-cmake .. -GNinja
-ninja
+cmake .. -GNinja -DTSC_BUILD_PARAVIEW_PLUGIN=ON -DTSC_WRAP_PYTHON=ON
+ninja install
 ```
 
 ### Usage
