@@ -601,7 +601,7 @@ namespace tsc_detail
    * @return
    */
   template <typename ArrT>
-  bool isInside(vtkIdList* loop_pt_ids, vtk::detail::ConstTupleIterator<ArrT, 3>& points,
+  bool isInside(vtkIdList* loop_pt_ids, vtk::detail::ConstTupleIterator<ArrT, 3> points,
     const double& test_x, const double& test_y)
   {
     bool inside{ false };
@@ -1166,8 +1166,8 @@ namespace tsc_detail
 
   vtkStandardNewMacro(Parent);
   Parent::Parent()
-    : cellId(-1)
-    , children()
+    : children()
+    , cellId(-1)
   {
     this->children.reserve(10);
   }
@@ -1234,7 +1234,6 @@ int tscTriSurfaceCutter::RequestData(vtkInformation* vtkNotUsed(request),
   const vtkIdType& num_loops_points = in_loop_points->GetNumberOfPoints();
   const vtkIdType& num_cells = input->GetNumberOfCells();
   const vtkIdType& num_verts = input->GetNumberOfVerts();
-  const vtkIdType& num_lines = input->GetNumberOfLines();
   const vtkIdType& num_strips = input->GetNumberOfStrips();
   const vtkIdType& num_polys = input->GetNumberOfPolys();
   const vtkIdType& num_loop_polys = loops->GetNumberOfPolys();
