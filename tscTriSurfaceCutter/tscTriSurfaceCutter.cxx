@@ -22,6 +22,7 @@
 #include <vtkInformation.h>
 #include <vtkInformationVector.h>
 #include <vtkLine.h>
+#include <vtkLogger.h>
 #include <vtkMergePoints.h>
 #include <vtkObjectFactory.h>
 #include <vtkPointData.h>
@@ -55,7 +56,7 @@ tscTriSurfaceCutter::tscTriSurfaceCutter()
 {
   this->SetNumberOfInputPorts(2);
   this->SetNumberOfOutputPorts(1);
-
+  this->DebugOn();
   this->CreateDefaultLocators();
 }
 
@@ -382,7 +383,7 @@ namespace tsc_detail
   struct TriIntersect2dImpl
   {
     /**
-     * @brief A brute-force implementation that intersect(in 2D plane @z=0.0) a triangle with a
+     * @brief A brute-force implementation that intersects(in 2D plane @z=0.0) a triangle with a
      * bunch of line segments.
      * @tparam PointsArrT1  triangle's points' data array T
      * @tparam PointsArrT2  loops' points' data array T
@@ -629,7 +630,7 @@ namespace tsc_detail
      * @tparam InOutsArrT     integral data array type
      * @param points1_arr     triangles' points' data array
      * @param points2_arr     loops' points' data array
-     * @param inside_out_arr  a data array that describes inside out nature of each loop polygon
+     * @param inside_out      inside out nature of all loop polygons
      * @param loops           [<bbox, ptIds>] for each loop polygon
      * @param is_acquired     indicates points that were acquired
      * @param constraints     a list of line segments that were constrained
@@ -645,23 +646,19 @@ namespace tsc_detail
      * @param acquisition     colors acquired points in output
      * @param fallthrough     avoid in/out tests
      *
-     *
-     * @note Accept triangles in two passes. Inverted followed by uninverted.
-     *
      */
     template <typename PointsArrT1, typename PointsArrT2>
-    void operator()(PointsArrT1* points1_arr, PointsArrT2* points2_arr,
-      vtkTypeInt32Array* inside_out_arr, const LoopsInfoType& loops,
-      const std::unordered_set<vtkIdType>& is_acquired, const SegmentsType& constraints,
-      Parent* parent, vtkPointData* in_pd, vtkPointData* out_pd, vtkCellArray* out_verts,
-      vtkCellArray* out_lines, vtkCellArray* out_polys, vtkCellArray* out_strips,
-      vtkCellData* in_cd, vtkCellData* out_verts_cd, vtkCellData* out_lines_cd,
-      vtkCellData* out_polys_cd, vtkCellData* out_strips_cd, vtkIncrementalPointLocator* locator,
-      vtkUnsignedCharArray* acquisition, const bool& fallthrough, const int& cell_type)
+    void operator()(PointsArrT1* points1_arr, PointsArrT2* points2_arr, const bool& inside_out,
+      const LoopsInfoType& loops, const std::unordered_set<vtkIdType>& is_acquired,
+      const SegmentsType& constraints, Parent* parent, vtkPointData* in_pd, vtkPointData* out_pd,
+      vtkCellArray* out_verts, vtkCellArray* out_lines, vtkCellArray* out_polys,
+      vtkCellArray* out_strips, vtkCellData* in_cd, vtkCellData* out_verts_cd,
+      vtkCellData* out_lines_cd, vtkCellData* out_polys_cd, vtkCellData* out_strips_cd,
+      vtkIncrementalPointLocator* locator, vtkUnsignedCharArray* acquisition,
+      const bool& fallthrough, const int& cell_type)
     {
       auto points_1 = vtk::DataArrayTupleRange<3>(points1_arr);
       auto points_2 = vtk::DataArrayTupleRange<3>(points2_arr);
-      auto inside_outs = vtk::DataArrayValueRange<1>(inside_out_arr);
 
       vtkSmartPointer<vtkIdList> root_pt_ids = parent->PointIds;
       const vtkIdType& num_points = parent->Points->GetNumberOfPoints();
@@ -672,20 +669,22 @@ namespace tsc_detail
       {
         if (!fallthrough)
         {
-          bool rejected{ false };
+          // initial condition clearly depends on inside_out. & vs |
+          bool rejected = inside_out ? true : false;
 
           const double& test_x = child.cx;
           const double& test_y = child.cy;
           auto& tri_bbox = child.bbox;
 
-          // reject this child if it lies inside at-least one polygon that is not inverted.
-          for (std::size_t loop_id = 0; loop_id < loops.size(); ++loop_id)
+          for (auto& loop : loops)
           {
-            const int& inside_out = inside_outs[loop_id];
-
-            if (!inside_out)
+            if (inside_out)
             {
-              auto& loop = loops[loop_id];
+              // the hard-way; default
+              rejected &= !isInside(loop.second.Get(), points_2.cbegin(), test_x, test_y);
+            }
+            else
+            {
               // the easy-way; effective when inside out is unset. (non-default)
               if (!(loop.first.Contains(tri_bbox) || loop.first.Intersects(tri_bbox)))
               {
@@ -698,25 +697,6 @@ namespace tsc_detail
               }
             }
           }
-
-          // if not yet rejected, remove if outside all inverted polygons
-          if (!rejected)
-          {
-            for (std::size_t loop_id = 0; loop_id < loops.size(); ++loop_id)
-            {
-              const int& inside_out = inside_outs[loop_id];
-              if (inside_out)
-              {
-                if (loop_id == 0)
-                  rejected = true; // initialize
-
-                const auto& loop = loops[loop_id];
-                // the hard-way; default
-                rejected &= !isInside(loop.second.Get(), points_2.cbegin(), test_x, test_y);
-              }
-            }
-          }
-
           if (rejected)
           {
             continue;
@@ -937,14 +917,14 @@ namespace tsc_detail
      * @param out_line_cd output cell data (line segments)
      * @param locator to insert unique points.
      */
-    SurfCutHelper(const LoopsInfoType& loops_info_holder_, vtkTypeInt32Array* inside_outs_,
+    SurfCutHelper(const LoopsInfoType& loops_info_holder_, const bool& inside_out_,
       vtkPointData* in_pd_, vtkPointData* out_pd_, vtkCellArray* out_verts_,
       vtkCellArray* out_lines_, vtkCellArray* out_polys_, vtkCellArray* out_strips_,
       vtkCellData* in_cd_, vtkCellData* out_verts_cd_, vtkCellData* out_lines_cd_,
       vtkCellData* out_polys_cd_, vtkCellData* out_strips_cd_, vtkIncrementalPointLocator* locator_,
       vtkPoints* in_points_, vtkPoints* in_loop_points_, vtkUnsignedCharArray* acquisition_)
       : loops_info_holder(loops_info_holder_)
-      , inside_outs(inside_outs_)
+      , inside_out(inside_out_)
       , out_verts(out_verts_)
       , out_lines(out_lines_)
       , out_polys(out_polys_)
@@ -961,6 +941,7 @@ namespace tsc_detail
       , in_loop_points(in_loop_points_)
       , acquisition(acquisition_)
     {
+      in_acquisition = vtkUnsignedCharArray::SafeDownCast(in_pd->GetArray("Acquired"));
       del2d->SetProjectionPlaneMode(VTK_DELAUNAY_XY_PLANE);
       del2d->SetInputData(input);
       del2d->SetOffset(100.0); // bump this if Delaunay output is concave
@@ -975,11 +956,11 @@ namespace tsc_detail
       PopTrisImpl worker;
       vtkDataArray* points1_arr = parent->Points->GetData();
       vtkDataArray* points2_arr = in_loop_points->GetData();
-      if (!dispatchRR::Execute(points1_arr, points2_arr, worker, inside_outs, loops_info_holder,
+      if (!dispatchRR::Execute(points1_arr, points2_arr, worker, inside_out, loops_info_holder,
             is_acquired, constraints, parent, in_pd, out_pd, out_verts, out_lines, out_polys,
             out_strips, in_cd, out_verts_cd, out_lines_cd, out_polys_cd, out_strips_cd, locator,
             acquisition, fallthrough, cell_type))
-        worker(points1_arr, points2_arr, inside_outs, loops_info_holder, is_acquired, constraints,
+        worker(points1_arr, points2_arr, inside_out, loops_info_holder, is_acquired, constraints,
           parent, in_pd, out_pd, out_verts, out_lines, out_polys, out_strips, in_cd, out_verts_cd,
           out_lines_cd, out_polys_cd, out_strips_cd, locator, acquisition, fallthrough, cell_type);
     }
@@ -1029,7 +1010,18 @@ namespace tsc_detail
       polys->InsertNextCell(point_ids->GetNumberOfIds());
 
       for (vtkIdType i = 0; i < point_ids->GetNumberOfIds(); ++i)
+      {
         polys->InsertCellPoint(i);
+
+        // superpose input's acquisition
+        if (in_acquisition)
+        {
+          if (in_acquisition->GetTypedComponent(point_ids->GetId(i), 0))
+          {
+            is_acquired.insert(i);
+          }
+        }
+      }
 
       vtkDataArray* points1_arr = parent->Points->GetData();
       vtkDataArray* points2_arr = in_points->GetData();
@@ -1125,7 +1117,7 @@ namespace tsc_detail
     SegmentsType constraints;
     std::unordered_set<vtkIdType> is_acquired;
     const LoopsInfoType& loops_info_holder;
-    vtkTypeInt32Array* inside_outs;
+    bool inside_out;
     vtkNew<vtkCellArray> polys;
     vtkNew<vtkDelaunay2D> del2d;
     vtkNew<vtkPolyData> input, output;
@@ -1137,6 +1129,7 @@ namespace tsc_detail
     vtkPointData *in_pd = nullptr, *out_pd = nullptr;
     vtkPoints *in_points = nullptr, *in_loop_points = nullptr;
     vtkUnsignedCharArray* acquisition = nullptr;
+    vtkUnsignedCharArray* in_acquisition  = nullptr;
   };
 
   Child::Child()
@@ -1209,19 +1202,6 @@ int tscTriSurfaceCutter::RequestData(vtkInformation* vtkNotUsed(request),
   vtkNew<vtkPolyData> loops;
   loops->CopyStructure(loops_);
 
-  vtkSmartPointer<vtkTypeInt32Array> inside_outs;
-  if ((inside_outs = vtkTypeInt32Array::FastDownCast(
-         loops_->GetCellData()->GetArray("InsideOuts"))) == nullptr)
-  {
-    vtkDebugMacro(<< "Loop polygons do not have InsideOuts array. Will resort to "
-                  << this->GetClassNameInternal() << "::InsideOut = " << this->InsideOut);
-    inside_outs = vtkSmartPointer<vtkTypeInt32Array>::New();
-    inside_outs->SetNumberOfComponents(1);
-    inside_outs->SetNumberOfTuples(loops->GetNumberOfPolys());
-    inside_outs->SetName("InsideOuts");
-    inside_outs->FillValue(this->InsideOut);
-  }
-
   vtkSmartPointer<vtkPoints> in_points = input->GetPoints();
   vtkSmartPointer<vtkPoints> in_loop_points = loops->GetPoints();
   vtkSmartPointer<vtkCellArray> in_loop_polys = loops->GetPolys();
@@ -1251,7 +1231,6 @@ int tscTriSurfaceCutter::RequestData(vtkInformation* vtkNotUsed(request),
 
   vtkSmartPointer<vtkPointData> in_pd = input->GetPointData();
   vtkSmartPointer<vtkPointData> out_pd = output->GetPointData();
-
   vtkSmartPointer<vtkCellData> in_cd = input->GetCellData();
 
   out_verts->Allocate(num_verts);
@@ -1272,7 +1251,7 @@ int tscTriSurfaceCutter::RequestData(vtkInformation* vtkNotUsed(request),
 
   if (in_pd->HasArray("Acquired"))
   {
-    in_pd->RemoveArray("Acquired");
+    vtkLog(INFO, "Superposing acquisition.");
   }
   out_pd->InterpolateAllocate(in_pd, num_points + num_loops_points * 3);
   vtkDebugMacro(<< "Alloc'd " << num_points + num_loops_points * 3 << " point data tuples");
@@ -1440,7 +1419,7 @@ int tscTriSurfaceCutter::RequestData(vtkInformation* vtkNotUsed(request),
   //                         2. try to intersect with loops,
   //                         3. pop child triangles into output poly-data
   //                         4. reset helper's data structures to prepare for next triangle.
-  tsc_detail::SurfCutHelper helper(loops_info_holder, inside_outs, in_pd, out_pd, out_verts,
+  tsc_detail::SurfCutHelper helper(loops_info_holder, this->InsideOut, in_pd, out_pd, out_verts,
     out_lines, out_polys, out_strips, in_cd, out_verts_cd, out_lines_cd, out_polys_cd,
     out_strips_cd, this->PointLocator, in_points, in_loop_points, acquisition);
 
@@ -1573,6 +1552,8 @@ void tscTriSurfaceCutter::PrintSelf(ostream& os, vtkIndent indent)
   os << indent << "InsideOut: " << (this->InsideOut ? "True" : "False") << "\n";
   os << indent << "Tolerance: " << this->Tolerance << "\n";
   os << indent << "Tolerance2: " << this->Tolerance * this->Tolerance << "\n";
+  os << indent << "Embed: " << (this->Embed ? "True" : "False") << "\n";
+  os << indent << "Remove: " << (this->Remove ? "True" : "False") << "\n";
 
   if (this->CellLocator)
   {

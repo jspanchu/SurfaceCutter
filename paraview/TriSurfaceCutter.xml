@@ -132,12 +132,13 @@
         <IntVectorProperty
             name="InsideOut"
             command="SetInsideOut"
-            label="Invert"
+            label="Inside Out"
             number_of_elements="1"
             default_values="1">
             <BooleanDomain name="bool"/>
             <Documentation>
-                Check this box to remove cells outside loop polygons. Default is On.
+                Check this box to remove cells outside all loop polygons. Default is On.
+                If turned off, remove cells inside atleast one loop polygon.
             </Documentation>
         </IntVectorProperty>
 

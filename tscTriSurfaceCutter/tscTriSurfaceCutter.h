@@ -86,8 +86,8 @@ public:
   //@{
   /**
    * After the loop's edges are embedded onto the surface,
-   * On: remove stuff outside loop
-   * Off: remove stuff inside loop
+   * On: remove stuff outside all loop polygons
+   * Off: remove stuff inside atleast one loop polygon
    */
   vtkBooleanMacro(InsideOut, bool);
   vtkSetMacro(InsideOut, bool);
