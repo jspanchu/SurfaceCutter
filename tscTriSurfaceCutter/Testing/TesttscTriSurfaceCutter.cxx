@@ -4,6 +4,7 @@
 #include <vtkCellIterator.h>
 #include <vtkDataArray.h>
 #include <vtkDataArrayAccessor.h>
+#include <vtkDataObject.h>
 #include <vtkIdList.h>
 #include <vtkMultiBlockDataSet.h>
 #include <vtkNew.h>
@@ -11,6 +12,7 @@
 #include <vtkPolyData.h>
 #include <vtkSmartPointer.h>
 #include <vtkXMLMultiBlockDataReader.h>
+#include <vtkXMLMultiBlockDataWriter.h>
 
 #include <array>
 #include <sstream>
@@ -158,25 +160,23 @@ int compare(vtkSmartPointer<vtkPolyData> pdata1, vtkSmartPointer<vtkPolyData> pd
 int main()
 {
   vtkNew<tscTriSurfaceCutter> surfCutter;
-  vtkNew<vtkPolyData> triangle, loop;
-  vtkNew<vtkPoints> tpoints, lPoints;
-  vtkNew<vtkCellArray> tCell, lCell;
+  vtkNew<vtkPolyData> triangle;
+  vtkNew<vtkPoints> tpoints;
+  vtkNew<vtkCellArray> tCell;
   vtkNew<vtkXMLMultiBlockDataReader> reader;
+  vtkNew<vtkXMLMultiBlockDataWriter> writer;
   vtkNew<vtkMultiBlockDataSet> inOutTrueBlks, inOutFalseBlks;
 
   triangle->SetPoints(tpoints);
   triangle->SetPolys(tCell);
-  loop->SetPoints(lPoints);
-  loop->SetPolys(lCell);
-
-  surfCutter->SetInputData(0, triangle);
-  surfCutter->SetInputData(1, loop);
 
   // init triangle
   tpoints->InsertNextPoint(-1.0, -1.0, 0.0);
   tpoints->InsertNextPoint(1.0, -1.0, 0.0);
   tpoints->InsertNextPoint(1.0, 1.0, 0.0);
   tCell->InsertNextCell({ 0, 1, 2 });
+
+  surfCutter->SetInputData(0, triangle);
 
   // data for loops
   std::vector<std::vector<std::vector<double>>> testPoints = {
@@ -204,23 +204,36 @@ int main()
   inOutTrueBlks->ShallowCopy(reader->GetOutput());
   for (unsigned short i = 0; i < 6; ++i)
   {
-    lPoints->Reset();
-    lCell->Reset();
+    vtkNew<vtkPolyData> loop;
+    vtkNew<vtkPoints> lPoints;
+    vtkNew<vtkCellArray> lCell;
     for (const auto& point : testPoints[i])
     {
       lPoints->InsertNextPoint(point.data());
     }
     lCell->InsertNextCell(testPolys[i].size(), testPolys[i].data());
+    loop->SetPoints(lPoints);
+    loop->SetPolys(lCell);
+    surfCutter->SetLoopsData(loop);
     surfCutter->Update();
 
     vtkSmartPointer<vtkPolyData> cut = surfCutter->GetOutput();
     vtkSmartPointer<vtkPolyData> test = vtkPolyData::SafeDownCast(inOutTrueBlks->GetBlock(i));
+    // vtkNew<vtkPolyData> test;
+    // test->DeepCopy(cut);
+    // inOutTrueBlks->SetBlock(i, test);
 
     if (compare(cut, test) == EXIT_FAILURE)
+    {
+      std::cerr << "InsideOut: True | Test " << i << ": Failed\n";
       return EXIT_FAILURE;
+    }
 
     std::cout << "InsideOut: True | Test " << i << ": Passed\n";
   }
+  // writer->SetInputData(inOutTrueBlks);
+  // writer->SetFileName("InOutTrue.vtm");
+  // writer->Write();
 
   surfCutter->SetInsideOut(false);
 
@@ -229,23 +242,36 @@ int main()
   inOutFalseBlks->ShallowCopy(reader->GetOutput());
   for (unsigned short i = 0; i < 6; ++i)
   {
-    lPoints->Reset();
-    lCell->Reset();
+    vtkNew<vtkPolyData> loop;
+    vtkNew<vtkPoints> lPoints;
+    vtkNew<vtkCellArray> lCell;
     for (const auto& point : testPoints[i])
     {
       lPoints->InsertNextPoint(point.data());
     }
     lCell->InsertNextCell(testPolys[i].size(), testPolys[i].data());
+    loop->SetPoints(lPoints);
+    loop->SetPolys(lCell);
+    surfCutter->SetLoopsData(loop);
     surfCutter->Update();
 
     vtkSmartPointer<vtkPolyData> cut = surfCutter->GetOutput();
     vtkSmartPointer<vtkPolyData> test = vtkPolyData::SafeDownCast(inOutFalseBlks->GetBlock(i));
+    // vtkNew<vtkPolyData> test;
+    // test->DeepCopy(cut);
+    // inOutFalseBlks->SetBlock(i, test);
 
     if (compare(cut, test) == EXIT_FAILURE)
+    {
+      std::cerr << "InsideOut: False | Test " << i << ": Failed\n";
       return EXIT_FAILURE;
+    }
     
     std::cout << "InsideOut: False| Test " << i << ": Passed\n";
   }
+  // writer->SetInputData(inOutFalseBlks);
+  // writer->SetFileName("InOutFalse.vtm");
+  // writer->Write();
 
   return EXIT_SUCCESS;
 }

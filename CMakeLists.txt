@@ -215,11 +215,11 @@ if(TSC_BUILD_TEST)
   add_test(NAME TesttscTriSurfaceCutter COMMAND TesttscTriSurfaceCutter WORKING_DIRECTORY ${TEST_RUNTIME_DIR})
   
   foreach (i RANGE 5) # hard-coded
-    configure_file(${TEST_DATA_FILES_FETCH_DIR}/InOutFalse/InOutFalse_${i}.vtp ${TEST_DATA_FILES_INPUT_DIR}/InOutFalse/InOutFalse_${i}.vtp)
-    configure_file(${TEST_DATA_FILES_FETCH_DIR}/InOutTrue/InOutTrue_${i}.vtp ${TEST_DATA_FILES_INPUT_DIR}/InOutTrue/InOutTrue_${i}.vtp)
+    file(COPY ${TEST_DATA_FILES_FETCH_DIR}/InOutFalse/InOutFalse_${i}.vtp DESTINATION ${TEST_DATA_FILES_INPUT_DIR}/InOutFalse)
+    file(COPY ${TEST_DATA_FILES_FETCH_DIR}/InOutTrue/InOutTrue_${i}.vtp DESTINATION ${TEST_DATA_FILES_INPUT_DIR}/InOutTrue)
   endforeach()
   
-  configure_file(${TEST_DATA_FILES_FETCH_DIR}/InOutFalse.vtm ${TEST_DATA_FILES_INPUT_DIR}/InOutFalse.vtm)
-  configure_file(${TEST_DATA_FILES_FETCH_DIR}/InOutTrue.vtm ${TEST_DATA_FILES_INPUT_DIR}/InOutTrue.vtm)
-  configure_file(${TEST_DATA_FILES_FETCH_DIR}/Triangle.vtp ${TEST_DATA_FILES_INPUT_DIR}/Triangle.vtp)
+  file(COPY ${TEST_DATA_FILES_FETCH_DIR}/InOutFalse.vtm  DESTINATION ${TEST_DATA_FILES_INPUT_DIR})
+  file(COPY ${TEST_DATA_FILES_FETCH_DIR}/InOutTrue.vtm  DESTINATION ${TEST_DATA_FILES_INPUT_DIR})
+  file(COPY ${TEST_DATA_FILES_FETCH_DIR}/Triangle.vtp  DESTINATION ${TEST_DATA_FILES_INPUT_DIR})
 endif()

@@ -205,8 +205,6 @@ int main(int argc, char** argv)
   if (!(useCookieCutter || useClipDataSet))
   {
     vtkNew<tscTriSurfaceCutter> surfCutter_;
-    vtkNew<vtkStaticCellLocator> cellLoc;
-    surfCutter_->SetCellLocator(cellLoc);
     surfCutter_->SetInputConnection(0, meshTransformer->GetOutputPort());
     surfCutter_->SetInputConnection(1, loopsReader->GetOutputPort());
     surfCutter_->SetInsideOut(insideOut);

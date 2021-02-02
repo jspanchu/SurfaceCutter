@@ -1,6 +1,8 @@
 #include "tscTriSurfaceCutter.h"
 
 #include <algorithm>
+#include <cmath>
+#include <cstring>
 #include <iterator>
 #include <numeric>
 #include <set>
@@ -16,13 +18,16 @@
 #include <vtkCellData.h>
 #include <vtkCellIterator.h>
 #include <vtkCellLocator.h>
+#include <vtkCellType.h>
 #include <vtkDataArray.h>
 #include <vtkDataArrayRange.h>
 #include <vtkDelaunay2D.h>
+#include <vtkGenericCell.h>
 #include <vtkInformation.h>
 #include <vtkInformationVector.h>
 #include <vtkLine.h>
 #include <vtkLogger.h>
+#include <vtkMath.h>
 #include <vtkMergePoints.h>
 #include <vtkObjectFactory.h>
 #include <vtkPointData.h>
@@ -93,23 +98,6 @@ int tscTriSurfaceCutter::FillOutputPortInformation(int port, vtkInformation* inf
 
 namespace tsc_detail
 {
-  enum class BaryCentricType
-  {
-    ON_VERTEX,
-    ON_EDGE,
-    INSIDE,
-    OUTSIDE,
-    DEGENERATE
-  };
-
-  enum class IntersectType
-  {
-    PERFECT_CROSS,
-    T_JUNCTION,
-    NO_INTERSECTION,
-    ON_LINE
-  };
-
   struct GetChildrenImpl
   {
     /**
@@ -162,23 +150,31 @@ namespace tsc_detail
   // Convention: in a triangle - v: vertex, e: edge
   // with vertices v0--v1--v2,
   // e0 = v0--v1, e1 = v1--v2, e2 = v2--v0;
-  const vtkIdType TRIEDGES[3][2] = { { 0, 1 }, { 1, 2 }, { 2, 0 } };
+  const std::array<std::pair<vtkIdType, vtkIdType>, 3> TRIEDGES = { std::make_pair(0, 1),
+    std::make_pair(1, 2), std::make_pair(2, 0) };
   const vtkIdType TRIOPPEDGE[3] = { 1, 2, 0 };  // edge id opposite to a vertex
   const vtkIdType TRIOPPVERTS[3] = { 2, 0, 1 }; // vertex id opposite to an edge
-  const vtkIdType TRIVERTS[3] = { 0, 1, 2 };
 
-  // Determine if a point's location on a triangle.
+  enum class PointInTriangle
+  {
+    OnVertex,
+    OnEdge,
+    Inside,
+    Outside,
+    Degenerate
+  };
+  // Determine a point's location in a triangle.
   // is it 1. on an edge of a triangle?
   //       2. inside/outside ?
   //       3. exactly coincident with a vertex?
   //       4. cannot determine (triangle is degenerate)
-  BaryCentricType inTriangle(const double p[3], const double p0[3], const double p1[3],
+  PointInTriangle inTriangle(const double p[3], const double p0[3], const double p1[3],
     const double p2[3], double bary_coords[3], const double& tol, vtkIdType& v, vtkIdType& e)
   {
     v = -1;
     e = -1;
     if (!vtkTriangle::BarycentricCoords(p, p0, p1, p2, bary_coords))
-      return BaryCentricType::DEGENERATE;
+      return PointInTriangle::Degenerate;
 
     const double& s = bary_coords[0];
     const double& t = bary_coords[1];
@@ -200,7 +196,7 @@ namespace tsc_detail
       v = 2;
     if (v >= 0)
     {
-      return BaryCentricType::ON_VERTEX;
+      return PointInTriangle::OnVertex;
     }
 
     bool s_gt0_lt1 = !std::signbit(s) && std::isless(s, 1) && !s_eq_0;
@@ -208,7 +204,7 @@ namespace tsc_detail
     bool st_gt0_lt1 = !std::signbit(st) && std::isless(st, 1) && !st_eq_0;
 
     if (s_gt0_lt1 && t_gt0_lt1 && st_gt0_lt1)
-      return BaryCentricType::INSIDE;
+      return PointInTriangle::Inside;
 
     if (s_eq_0 && t_gt0_lt1 && st_gt0_lt1)
       e = TRIOPPEDGE[0];
@@ -217,12 +213,12 @@ namespace tsc_detail
     else if (st_eq_0 && s_gt0_lt1 && t_gt0_lt1)
       e = TRIOPPEDGE[2];
     if (e >= 0)
-      return BaryCentricType::ON_EDGE;
+      return PointInTriangle::OnEdge;
 
     if (s_eq_0 && t_eq_0 && st_eq_0)
-      return BaryCentricType::DEGENERATE;
+      return PointInTriangle::Degenerate;
 
-    return BaryCentricType::OUTSIDE;
+    return PointInTriangle::Outside;
   }
 
   // Reasonable z-value of a point inside(or on an edge/vertex) a triangle.
@@ -240,12 +236,64 @@ namespace tsc_detail
     p[2] = bary_coords[0] * p0[2] + bary_coords[1] * p1[2] + bary_coords[2] * p2[2];
   }
 
+  enum class PointOnLine
+  {
+    OnVertex,
+    Inside,
+    Outside,
+  };
+  // Determine if a point's location on a line segment.
+  // is it 1. on one of the end vertices?
+  //       2. inside/outside ?
+  PointOnLine onLine(const double p[3], const double p1[3], const double p2[3], const double& tol, vtkIdType& v)
+  {
+    v = -1;
+    double t{0};
+    const double dist2 = vtkLine::DistanceToLine(p, p1, p2, t, nullptr);
+
+    if (dist2 > tol * tol)
+    {
+      return PointOnLine::Outside;
+    }
+
+    const double& s = 1 - t;
+
+    bool s_eq_0 = std::fpclassify(s) == FP_ZERO || std::fabs(s) <= tol;
+    bool t_eq_0 = std::fpclassify(t) == FP_ZERO || std::fabs(t) <= tol;
+
+    bool s_eq_1 = std::fabs(s - 1.0) <= tol;
+    bool t_eq_1 = std::fabs(t - 1.0) <= tol;
+
+    if (s_eq_0 && t_eq_1)
+      v = 1;
+    else if (s_eq_1 && t_eq_0)
+      v = 0;
+    if (v >= 0)
+    {
+      return PointOnLine::OnVertex;
+    }
+
+    bool s_gt0_lt1 = !std::signbit(s) && std::isless(s, 1) && !s_eq_0;
+    bool t_gt0_lt1 = !std::signbit(t) && std::isless(t, 1) && !t_eq_0;
+
+    if (s_gt0_lt1 && t_gt0_lt1)
+      return PointOnLine::Inside;
+
+    return PointOnLine::Outside;
+  }
+
+  enum class IntersectType
+  {
+    NoIntersection = 0,
+    Intersect,
+    Junction
+  };
   // Quantify return status of vtkLine::Intersection(...)
   IntersectType robustIntersect(const double* p1, const double* p2, const double* q1,
     const double* q2, double px[3], const double& tol)
   {
     double u(0.0), v(0.0);
-    int intersect = vtkLine::Intersection(p1, p2, q1, q2, u, v);
+    const int vtk_intersect = vtkLine::Intersection(p1, p2, q1, q2, u, v);
 
     double u_proj[3] = { 0., 0., 0. };
     double v_proj[3] = { 0., 0., 0. };
@@ -264,95 +312,56 @@ namespace tsc_detail
     // Just so we're clear:
     // 0: VTK_NO_INTERSECTION
     // 2: VTK_YES_INTERSECTION
-    // 3: VTK_ON_LINE
-    if (!intersect)
-      return IntersectType::NO_INTERSECTION;
-    else if (intersect == 2 && closest_dist < tol2)
+    // 3: VTK_ON_LINE (Consider this as NoIntersection)
+    if (vtk_intersect != 2)
+      return IntersectType::NoIntersection;
+    else if (closest_dist < tol2)
     {
       // T type-1
       if (std::fabs(1.0 - u) <= tol && closest_dist < tol2)
       {
         std::copy(p2, p2 + 3, px);
-        return IntersectType::T_JUNCTION;
+        return IntersectType::Junction;
       }
       else if (std::fabs(1.0 - v) <= tol && closest_dist < tol2)
       {
         std::copy(q2, q2 + 3, px);
-        return IntersectType::T_JUNCTION;
+        return IntersectType::Junction;
       }
 
       // T type-2
       if (std::fpclassify(u) == FP_ZERO && closest_dist < tol2)
       {
         std::copy(p1, p1 + 3, px);
-        return IntersectType::T_JUNCTION;
+        return IntersectType::Junction;
       }
       else if (std::fpclassify(v) == FP_ZERO && closest_dist < tol2)
       {
         std::copy(q1, q1 + 3, px);
-        return IntersectType::T_JUNCTION;
+        return IntersectType::Junction;
       }
 
       // T type-3
       if (std::fabs(u) <= tol && closest_dist < tol2)
       {
         std::copy(p1, p1 + 3, px);
-        return IntersectType::T_JUNCTION;
+        return IntersectType::Junction;
       }
       else if (std::fabs(v) <= tol && closest_dist < tol2)
       {
         std::copy(q1, q1 + 3, px);
-        return IntersectType::T_JUNCTION;
+        return IntersectType::Junction;
       }
       // Perfect
       else
       {
         std::copy(v_proj, v_proj + 3, px);
-        return IntersectType::PERFECT_CROSS;
+        return IntersectType::Intersect;
       }
     }
-    // On line
-    else if (intersect == 3 && closest_dist < tol2)
-    {
-      for (unsigned short dim = 0; dim < 3; ++dim)
-        px[dim] = q1[dim] + v * (q2[dim] - q1[dim]);
 
-      return IntersectType::ON_LINE;
-    }
-
-    return IntersectType::NO_INTERSECTION;
+    return IntersectType::NoIntersection;
   }
-
-  struct GetEdgeBBoxImpl
-  {
-    // strict 2d bbox
-    template <typename PointsArrT, typename = vtk::detail::EnableIfVtkDataArray<PointsArrT>>
-    void operator()(
-      PointsArrT* points_arr, const vtkIdType& v1, const vtkIdType& v2, vtkBoundingBox& bbox)
-    {
-      auto points = vtk::DataArrayTupleRange<3>(points_arr);
-      using PointsT = vtk::GetAPIType<PointsArrT>;
-      PointsT x_min = (points[v1][0] < points[v2][0]) ? points[v1][0] : points[v2][0];
-      PointsT x_max = (points[v1][0] > points[v2][0]) ? points[v1][0] : points[v2][0];
-      PointsT y_min = (points[v1][1] < points[v2][1]) ? points[v1][1] : points[v2][1];
-      PointsT y_max = (points[v1][1] > points[v2][1]) ? points[v1][1] : points[v2][1];
-      bbox.SetBounds(x_min, x_max, y_min, y_max, 0.0, 0.0);
-    }
-
-    // overload to enforce a certain {zmin, zmax}
-    template <typename PointsArrT, typename = vtk::detail::EnableIfVtkDataArray<PointsArrT>>
-    void operator()(PointsArrT* points_arr, const vtkIdType& v1, const vtkIdType& v2,
-      const double& zmin, const double& zmax, vtkBoundingBox& bbox)
-    {
-      auto points = vtk::DataArrayTupleRange<3>(points_arr);
-      using PointsT = vtk::GetAPIType<PointsArrT>;
-      PointsT x_min = (points[v1][0] < points[v2][0]) ? points[v1][0] : points[v2][0];
-      PointsT x_max = (points[v1][0] > points[v2][0]) ? points[v1][0] : points[v2][0];
-      PointsT y_min = (points[v1][1] < points[v2][1]) ? points[v1][1] : points[v2][1];
-      PointsT y_max = (points[v1][1] > points[v2][1]) ? points[v1][1] : points[v2][1];
-      bbox.SetBounds(x_min, x_max, y_min, y_max, zmin, zmax);
-    }
-  };
 
   //
   struct GetRootImpl
@@ -383,8 +392,12 @@ namespace tsc_detail
   struct TriIntersect2dImpl
   {
     /**
-     * @brief A brute-force implementation that intersects(in 2D plane @z=0.0) a triangle with a
-     * bunch of line segments.
+     * @brief   A brute-force implementation that intersects(in 2D plane @z=0.0) a triangle with a
+     *          bunch of line segments. 
+     *          It uses hints such as a point's location w.r.t a triangle to avoid actually
+     *          testing intersection of line segments.
+     *          If this implementation could be modified to work for a concave polygon, 
+     *          we can cut polygons too!
      * @tparam PointsArrT1  triangle's points' data array T
      * @tparam PointsArrT2  loops' points' data array T
      * @param points1_arr   triangle's points' data array
@@ -393,6 +406,7 @@ namespace tsc_detail
      * @param constraints   list of segments that make up constraints
      * @param is_acquired   contains points that have been acquired from lines' points
      * @param tol           numeric tolerance for intersection math.
+     *
      */
     template <typename PointsArrT1, typename = vtk::detail::EnableIfVtkDataArray<PointsArrT1>,
       typename PointsArrT2, typename = vtk::detail::EnableIfVtkDataArray<PointsArrT1>>
@@ -402,24 +416,27 @@ namespace tsc_detail
       if (!lines.size())
         return;
 
-      auto points_1 = vtk::DataArrayTupleRange<3>(points1_arr);
-      auto points_2 = vtk::DataArrayTupleRange<3>(points2_arr);
+      auto points_1 = vtk::DataArrayTupleRange<3>(points1_arr); // triangle's points
+      auto points_2 = vtk::DataArrayTupleRange<3>(points2_arr); // loop's points
 
       // clang-format off
       double p2d[3][3] = 
       { { points_1[0][0], points_1[0][1], 0.0 },
         { points_1[1][0], points_1[1][1], 0.0 }, 
-        { points_1[2][0], points_1[2][1], 0.0 } };
+        { points_1[2][0], points_1[2][1], 0.0 } };  // use this for point in triangle, intersection tests.
 
       double p3d[3][3] = 
       { { points_1[0][0], points_1[0][1], points_1[0][2] },
         { points_1[1][0], points_1[1][1], points_1[1][2] },
-        { points_1[2][0], points_1[2][1], points_1[2][2] } };
+        { points_1[2][0], points_1[2][1], points_1[2][2] } }; // use this for z-interpolation
       // clang-format on
 
       std::unordered_map<vtkIdType, vtkIdType> processed; // k: line pt, v: insertLoc
-      const double tol2 = tol * tol;
 
+      // a1, a2: line point ids. 
+      // p1, p2: line point coordinates.
+      // b1, b2: triangle edge point ids.
+      // q1, q2: triangle edge coordinates.
       for (const auto& line : lines)
       {
         const vtkIdType& a1 = line.first;
@@ -437,155 +454,153 @@ namespace tsc_detail
         const auto a1Pos = inTriangle(p1, p2d[0], p2d[1], p2d[2], p1_bary_coords, tol, a1v, a1e);
         const auto a2Pos = inTriangle(p2, p2d[0], p2d[1], p2d[2], p2_bary_coords, tol, a2v, a2e);
 
-        const bool a1_inside = a1Pos == BaryCentricType::INSIDE;
-        const bool a2_inside = a2Pos == BaryCentricType::INSIDE;
-        const bool a1_on_edge = a1Pos == BaryCentricType::ON_EDGE;
-        const bool a2_on_edge = a2Pos == BaryCentricType::ON_EDGE;
-        const bool a1_on_vert = a1Pos == BaryCentricType::ON_VERTEX;
-        const bool a2_on_vert = a2Pos == BaryCentricType::ON_VERTEX;
+        // for convenience
+        const bool a1_inside = a1Pos == PointInTriangle::Inside;
+        const bool a2_inside = a2Pos == PointInTriangle::Inside;
+        const bool a1_on_edge = a1Pos == PointInTriangle::OnEdge;
+        const bool a2_on_edge = a2Pos == PointInTriangle::OnEdge;
+        const bool a1_on_vert = a1Pos == PointInTriangle::OnVertex;
+        const bool a2_on_vert = a2Pos == PointInTriangle::OnVertex;
+        const bool a1_outside = a1Pos == PointInTriangle::Outside;
+        const bool a2_outside = a2Pos == PointInTriangle::Outside;
 
-        double px[3] = {};
-        std::set<vtkIdType> hits; // will be used to record point ids that make up constraints.
-        vtkIdType inserted(-1);
+        double px[3] = {}; // new inserted point.
+        std::set<vtkIdType> hits; // store point ids. when elements are paired up, they form constraints.
+        vtkIdType inserted(-1); // keeps location of px when inserted into points1_arr
 
-        for (const auto& e : TRIEDGES)
+        // here, try to avoid a call to `robustIntersect()` as much as possible.
+        if (a1_inside || a1_on_edge)
         {
-          const vtkIdType& v0 = e[0];
-          const vtkIdType& v1 = e[1];
-
-          const double* q1 = p2d[v0];
-          const double* q2 = p2d[v1];
-
-          const auto type_of_intersection = robustIntersect(p1, p2, q1, q2, px, tol);
-          if (type_of_intersection == IntersectType::PERFECT_CROSS)
+          if (processed.find(a1) == processed.end())
           {
-            interpZ(px, p3d[0], p3d[1], p3d[2]);
+            std::copy(p1, p1 + 3, px);
+            interpZ(px, p3d[0], p3d[1], p3d[2], p1_bary_coords);
             inserted = points1_arr->InsertNextTuple(px);
-            hits.insert(inserted);
+            processed[a1] = inserted;
+            is_acquired.insert(inserted);
           }
-          else if (type_of_intersection == IntersectType::T_JUNCTION)
-          {
-            double minDist = VTK_DOUBLE_MAX;
-            vtkIdType tgt(-1);
-            for (const auto& v : TRIVERTS)
-            {
-              const double* a = p2d[v];
-              double dist2 = vtkLine::DistanceToLine(a, p1, p2);
-              if (dist2 < minDist)
-              {
-                minDist = dist2;
-                tgt = v;
-              }
-            }
-            if (tgt >= 0 && minDist <= tol2)
-            {
-              hits.insert(tgt);
-              double dist2_p1 = vtkMath::Distance2BetweenPoints(p2d[tgt], p1);
-              double dist2_p2 = vtkMath::Distance2BetweenPoints(p2d[tgt], p2);
-              if (dist2_p1 < tol2)
-                is_acquired.insert(tgt);
-              else if (dist2_p2 < tol2)
-                is_acquired.insert(tgt);
-            }
-            else if (a1_on_edge)
-            {
-              if (processed.find(a1) == processed.end())
-              {
-                std::copy(p1, p1 + 3, px);
-                interpZ(px, p3d[0], p3d[1], p3d[2], p1_bary_coords);
-                inserted = points1_arr->InsertNextTuple(px);
-                processed[a1] = inserted;
-                hits.insert(inserted);
-                is_acquired.insert(inserted);
-              }
-            }
-            else if (a2_on_edge)
-            {
-              if (processed.find(a2) == processed.end())
-              {
-                std::copy(p2, p2 + 3, px);
-                interpZ(px, p3d[0], p3d[1], p3d[2], p2_bary_coords);
-                inserted = points1_arr->InsertNextTuple(px);
-                processed[a2] = inserted;
-                hits.insert(inserted);
-                is_acquired.insert(inserted);
-              }
-            }
-          }
+          hits.insert(processed[a1]);
         }
-        if (hits.size() == 2)
-        {
-          const auto a = hits.cbegin();
-          const auto b = std::next(a);
-          constraints.emplace_back(*a, *b);
-        }
-        else if (hits.size() == 1)
-        {
-          if (a1_inside || a1_on_edge)
-          {
-            if (processed.find(a1) == processed.end())
-            {
-              std::copy(p1, p1 + 3, px);
-              interpZ(px, p3d[0], p3d[1], p3d[2], p1_bary_coords);
-              inserted = points1_arr->InsertNextTuple(px);
-              processed[a1] = inserted;
-            }
-            constraints.emplace_back(*(hits.begin()), processed[a1]);
-            is_acquired.insert(processed[a1]);
-          }
-          else if (a1_on_vert)
-          {
-            processed[a1] = a1v;
-            constraints.emplace_back(*(hits.begin()), a1v);
-            is_acquired.insert(a1v);
-          }
 
-          if (a2_inside || a2_on_edge)
+        if (a2_inside || a2_on_edge)
+        {
+          if (processed.find(a2) == processed.end())
           {
-            if (processed.find(a2) == processed.end())
-            {
-              std::copy(p2, p2 + 3, px);
-              interpZ(px, p3d[0], p3d[1], p3d[2], p2_bary_coords);
-              inserted = points1_arr->InsertNextTuple(px);
-              processed[a2] = inserted;
-            }
-            constraints.emplace_back(*(hits.begin()), processed[a2]);
-            is_acquired.insert(processed[a2]);
+            std::copy(p2, p2 + 3, px);
+            interpZ(px, p3d[0], p3d[1], p3d[2], p2_bary_coords);
+            inserted = points1_arr->InsertNextTuple(px);
+            processed[a2] = inserted;
+            is_acquired.insert(inserted);
           }
-          else if (a2_on_vert)
+          hits.insert(processed[a2]);
+        }
+
+        if (a1_on_vert)
+        {
+          if (processed.find(a1) == processed.end())
           {
-            processed[a2] = a2v;
-            constraints.emplace_back(*(hits.begin()), a2v);
-            is_acquired.insert(a2v);
+            inserted = a1v;
+            processed[a1] = inserted;
+            is_acquired.insert(inserted);
+          }
+          hits.insert(processed[a1]);
+        }
+
+        if (a2_on_vert)
+        {
+          if (processed.find(a2) == processed.end())
+          {
+            inserted = a2v;
+            processed[a2] = inserted;
+            is_acquired.insert(inserted);
+          }
+          hits.insert(processed[a2]);
+        }
+
+        // Call robustIntersect()
+        if ((a1_outside && a2_outside) || (a1_outside && !a2_outside) ||
+          (!a1_outside && a2_outside))
+        {
+          for (const auto& edge : TRIEDGES)
+          {
+            const vtkIdType& b1 = edge.first;
+            const vtkIdType& b2 = edge.second;
+
+            const double* q1 = p2d[b1];
+            const double* q2 = p2d[b2];
+
+            const auto intersect_type = tsc_detail::robustIntersect(p1, p2, q1, q2, px, tol);
+            if (intersect_type == IntersectType::Intersect)
+            {
+              interpZ(px, p3d[0], p3d[1], p3d[2]);
+              inserted = points1_arr->InsertNextTuple(px);
+              hits.insert(inserted);
+            }
+            else
+            {
+              // possibly on line or a junction.
+              // junctions were handled before performing intersections (ax_on_edge or ax_on_vert)
+              inserted = -1;
+              vtkIdType v1{-1}, v2{-1}, v3{-1}, v4{-1};
+              const auto q1_on_p1_p2 = tsc_detail::onLine(q1, p1, p2, tol, v1);
+              const auto q2_on_p1_p2 = tsc_detail::onLine(q2, p1, p2, tol, v2);
+              const auto p1_on_q1_q2 = tsc_detail::onLine(p1, q1, q2, tol, v3);
+              const auto p2_on_q1_q2 = tsc_detail::onLine(p2, q1, q2, tol, v4);
+              if (q1_on_p1_p2 != PointOnLine::Outside)
+              {
+                inserted = b1;
+              }
+              else if (q2_on_p1_p2 != PointOnLine::Outside)
+              {
+                inserted = b2;
+              }
+              else if (p1_on_q1_q2 != PointOnLine::Outside)
+              {
+                if (processed.find(a1) == processed.end())
+                {
+                  std::copy(p1, p1 + 3, px);
+                  interpZ(px, p3d[0], p3d[1], p3d[2], p1_bary_coords);
+                  inserted = points1_arr->InsertNextTuple(px);
+                  processed[a1] = inserted;
+                  is_acquired.insert(inserted);
+                }
+                else
+                {
+                  inserted = processed[a1];
+                }
+              }
+              else if (p2_on_q1_q2 != PointOnLine::Outside)
+              {
+                if (processed.find(a2) == processed.end())
+                {
+                  std::copy(p2, p2 + 3, px);
+                  interpZ(px, p3d[0], p3d[1], p3d[2], p2_bary_coords);
+                  inserted = points1_arr->InsertNextTuple(px);
+                  processed[a2] = inserted;
+                  is_acquired.insert(inserted);
+                }
+                else
+                {
+                  inserted = processed[a2];
+                }
+              }
+              if (inserted >= 0)
+              {
+                hits.insert(inserted);
+              }
+            }
           }
         }
-        else if (!hits.size())
+
+        if (hits.size() < 2)
         {
-          // the last hope!
-          bool force = (a1_inside && a2_inside) || (a1_inside && a2_on_edge) ||
-            (a1_on_edge && a2_inside) || (a1_on_edge && a2_on_edge) || (a1_inside && a2_on_vert) ||
-            (a1_on_vert && a2_inside) || (a1_on_edge && a2_on_vert) || (a1_on_vert && a2_on_edge) ||
-            (a1_on_vert && a2_on_vert);
-          if (force)
-          {
-            if (processed.find(a1) == processed.end())
-            {
-              std::copy(p1, p1 + 3, px);
-              interpZ(px, p3d[0], p3d[1], p3d[2], p1_bary_coords);
-              inserted = points1_arr->InsertNextTuple(px);
-              processed[a1] = inserted;
-            }
-            if (processed.find(a2) == processed.end())
-            {
-              std::copy(p2, p2 + 3, px);
-              interpZ(px, p3d[0], p3d[1], p3d[2], p2_bary_coords);
-              inserted = points1_arr->InsertNextTuple(px);
-              processed[a2] = inserted;
-            }
-            constraints.emplace_back(processed[a1], processed[a2]);
-            is_acquired.insert(processed[a1]);
-            is_acquired.insert(processed[a2]);
-          }
+          continue;
+        }
+        for (auto it = hits.begin(); it != std::prev(hits.end()); ++it)
+        {
+          const auto& a = it;
+          const auto& b = std::next(a);
+          constraints.emplace_back(*a, *b);
         }
       }
     }
@@ -782,6 +797,11 @@ namespace tsc_detail
           //__debugbreak(); // triangle with this constraint was rejected?
           continue;
         }
+        else if (line[0] == line[1])
+        {
+          // __debugbreak(); // degenerate
+          continue;
+        }
 
         out_lines->InsertNextCell(2, line);
         out_lines_cd->InsertNextTuple(root_id, in_cd);
@@ -844,8 +864,8 @@ namespace tsc_detail
         // find an edge vi--vj that intersects vl--vm
         for (const auto& edge : TRIEDGES)
         {
-          const vtkIdType& id0 = edge[0];
-          const vtkIdType& id1 = edge[1];
+          const vtkIdType& id0 = edge.first;
+          const vtkIdType& id1 = edge.second;
           const vtkIdType& vi = point_ids[id0];
           const vtkIdType& vj = point_ids[id1];
           const double pi[3] = { points[vi][0], points[vi][1], 0.0 };
@@ -853,7 +873,7 @@ namespace tsc_detail
 
           double px[3] = {};
           const auto type_of_intersection = robustIntersect(pi, pj, pl, pm, px, tol);
-          if (type_of_intersection != IntersectType::PERFECT_CROSS)
+          if (type_of_intersection != IntersectType::Intersect)
             continue;
 
           v1 = vi;
@@ -875,8 +895,8 @@ namespace tsc_detail
         mesh->GetCellPoints(t1, num_point_ids, point_ids);
         for (const auto& edge : TRIEDGES)
         {
-          const vtkIdType& id0 = edge[0];
-          const vtkIdType& id1 = edge[1];
+          const vtkIdType& id0 = edge.first;
+          const vtkIdType& id1 = edge.second;
           if ((point_ids[id0] == v1 && point_ids[id1] == v2) ||
             (point_ids[id1] == v1 && point_ids[id0] == v2))
           {
@@ -1129,7 +1149,7 @@ namespace tsc_detail
     vtkPointData *in_pd = nullptr, *out_pd = nullptr;
     vtkPoints *in_points = nullptr, *in_loop_points = nullptr;
     vtkUnsignedCharArray* acquisition = nullptr;
-    vtkUnsignedCharArray* in_acquisition  = nullptr;
+    vtkUnsignedCharArray* in_acquisition = nullptr;
   };
 
   Child::Child()
@@ -1185,7 +1205,7 @@ int tscTriSurfaceCutter::RequestData(vtkInformation* vtkNotUsed(request),
 {
   vtkSmartPointer<vtkPolyData> input =
     vtkPolyData::GetData(inputVector[0]->GetInformationObject(0));
-  vtkSmartPointer<vtkPolyData> loops_ =
+  vtkSmartPointer<vtkPolyData> loops =
     vtkPolyData::GetData(inputVector[1]->GetInformationObject(0));
 
   vtkSmartPointer<vtkPolyData> output = vtkPolyData::GetData(outputVector->GetInformationObject(0));
@@ -1196,12 +1216,7 @@ int tscTriSurfaceCutter::RequestData(vtkInformation* vtkNotUsed(request),
     return 1;
   }
 
-  // we're about to do stuff that is not thread-safe (query bounds, add scalars, ..).
-  // multiple threads might use the same loop polydata for different surfaces,
-  // so copy bare minimum
-  vtkNew<vtkPolyData> loops;
-  loops->CopyStructure(loops_);
-
+  ///> Allocate output data structures.
   vtkSmartPointer<vtkPoints> in_points = input->GetPoints();
   vtkSmartPointer<vtkPoints> in_loop_points = loops->GetPoints();
   vtkSmartPointer<vtkCellArray> in_loop_polys = loops->GetPolys();
@@ -1273,9 +1288,14 @@ int tscTriSurfaceCutter::RequestData(vtkInformation* vtkNotUsed(request),
   out_strips_cd->CopyAllocate(in_cd);
   vtkDebugMacro(<< "Alloc'd CellData for strips");
 
-  vtkDataArray* in_points_darr = in_points->GetData();
-  vtkDataArray* in_loops_pts_darr = in_loop_points->GetData();
+  vtkNew<vtkUnsignedCharArray> acquisition;
+  acquisition->SetName("Acquired");
+  acquisition->SetNumberOfComponents(1);
+  acquisition->Allocate(num_points + num_loops_points);
+  vtkDebugMacro(<< "Alloc'd " << num_points + num_loops_points << " towards acquistion");
+  ///> Finished allocation
 
+  ///> Extend bounds along Z.
   double in_bounds[6] = {};
   double loops_bounds[6] = {};
   double out_bounds[6] = {};
@@ -1296,7 +1316,9 @@ int tscTriSurfaceCutter::RequestData(vtkInformation* vtkNotUsed(request),
   vtkDebugMacro(<< "XMin: " << out_bounds[0] << ", XMax: " << out_bounds[1]);
   vtkDebugMacro(<< "YMin: " << out_bounds[2] << ", YMax: " << out_bounds[3]);
   vtkDebugMacro(<< "ZMin: " << out_bounds[4] << ", ZMax: " << out_bounds[5]);
+  ///> Finished extending bounds.
 
+  ///> Find candidate cells
   this->CreateDefaultLocators();
 
   this->CellLocator->CacheCellBoundsOn();
@@ -1304,117 +1326,63 @@ int tscTriSurfaceCutter::RequestData(vtkInformation* vtkNotUsed(request),
   this->CellLocator->BuildLocator();
   vtkDebugMacro(<< "Built locators");
 
-  this->PointLocator->SetTolerance(this->Tolerance);
-  this->PointLocator->InitPointInsertion(out_pts, out_bounds);
-  vtkDebugMacro(<< "Init'd point insertion");
-
   // cache loops and cells that might cross.
   std::unordered_map<vtkIdType, SegmentsType> can_cross;
   LoopsInfoType loops_info_holder(num_loop_polys);
-  vtkNew<vtkIdList> cells;
-  tsc_detail::GetEdgeBBoxImpl edge_bbox_worker;
   can_cross.reserve(num_polys);
-  double edge_bounds[6] = {};
 
-  auto loops_iter = vtk::TakeSmartPointer(in_loop_polys->NewIterator());
-  for (loops_iter->GoToFirstCell(); !loops_iter->IsDoneWithTraversal(); loops_iter->GoToNextCell())
+  auto loops_iter = vtk::TakeSmartPointer(loops->NewCellIterator());
+  vtkIdType loop_id{ 0 };
+  vtkNew<vtkGenericCell> loop;
+  vtkNew<vtkIdList> cells;
+  for (loops_iter->InitTraversal(); !loops_iter->IsDoneWithTraversal();
+       loops_iter->GoToNextCell(), ++loop_id)
   {
-    const vtkIdType& loop_id = loops_iter->GetCurrentCellId();
+    loops_iter->GetCell(loop);
 
-    vtkDebugMacro(<< "Processing loop: " << loop_id);
+    vtkSmartPointer<vtkIdList> loop_pts = loops_info_holder[loop_id].second;
+    loop_pts->DeepCopy(loop->GetPointIds());
 
-    vtkSmartPointer<vtkIdList> loopPtIds = loops_info_holder[loop_id].second;
-    loops_iter->GetCurrentCell(loopPtIds);
+    const vtkIdType& num_edges = loop->GetNumberOfEdges();
+    vtkDebugMacro(<< "Processing loop: " << loop_id << " (" << num_edges << " edges)");
 
-    const vtkIdType& nedges = loopPtIds->GetNumberOfIds();
-    for (vtkIdType lEdge = 0; lEdge < nedges; ++lEdge)
+    for (vtkIdType edge_id = 0; edge_id < num_edges; ++edge_id)
     {
-      const vtkIdType& i0 = lEdge;
-      const vtkIdType i1 = (lEdge + 1) % nedges ? (lEdge + 1) : 0;
-      const vtkIdType& e0 = loopPtIds->GetId(i0);
-      const vtkIdType& e1 = loopPtIds->GetId(i1);
+      vtkCell* edge = loop->GetEdge(edge_id);
+      const vtkIdType& e0 = edge->GetPointId(0);
+      const vtkIdType& e1 = edge->GetPointId(1);
 
-      vtkDebugMacro(<< "Processing loop edge: " << lEdge << "(" << e0 << "," << e1 << ")");
-
-      vtkBoundingBox lEdgeBBox;
-      if (!dispatchR::Execute(in_loops_pts_darr, edge_bbox_worker, e0, e1, lEdgeBBox))
-        edge_bbox_worker(in_loops_pts_darr, e0, e1, lEdgeBBox);
-
-      lEdgeBBox.GetBounds(edge_bounds);
+      double edge_bounds[6] = {};
+      edge->GetBounds(edge_bounds);
 
       // extend up to combined {min, max} since that is what CellLocator sees.
-      edge_bounds[4] = out_bounds[4];
-      edge_bounds[5] = out_bounds[5];
+      std::copy(out_bounds + 4, out_bounds + 6, edge_bounds + 4);
       vtkDebugMacro(<< " Xmin:" << edge_bounds[0] << " Xmax:" << edge_bounds[1]
                     << " Ymin:" << edge_bounds[2] << " Ymax:" << edge_bounds[3]
                     << " Zmin:" << edge_bounds[4] << " Zmax:" << edge_bounds[5]);
       this->CellLocator->FindCellsWithinBounds(edge_bounds, cells);
 
-      vtkDebugMacro(<< "Located " << cells->GetNumberOfIds() << " cells");
+      vtkDebugMacro("Loop edge: " << edge_id << "(" << e0 << "," << e1 << "). Located "
+                                  << cells->GetNumberOfIds() << " cells");
 
-      edge_bounds[4] = 0.0; // back to 2d.
-      edge_bounds[5] = 0.0;
       for (const auto& cell_id : *cells)
       {
-        // rule out triangles if the two edge bounding boxes do not intersect
-        const vtkIdType* point_ids = nullptr;
-        vtkIdType num_point_ids{ 0 };
-
-        switch (input->GetCellType(cell_id))
+        if (input->GetCellType(cell_id) == VTK_TRIANGLE)
         {
-          case VTK_TRIANGLE:
-            input->GetCellPoints(cell_id, num_point_ids, point_ids);
-            break;
-          default:
-            continue;
-        }
-        vtkDebugMacro(<< "Processing cell " << cell_id << ", num_point_ids: " << num_point_ids);
-
-        if (num_point_ids != 3)
-        {
-          continue;
-        }
-
-        for (const auto& tEdge : tsc_detail::TRIEDGES)
-        {
-          const vtkIdType vi = point_ids[tEdge[0]];
-          const vtkIdType vj = point_ids[tEdge[1]];
-
-          vtkBoundingBox tEdgeBBox;
-          if (!dispatchR::Execute(in_points_darr, edge_bbox_worker, vi, vj, tEdgeBBox))
-            edge_bbox_worker(in_points_darr, vi, vj, tEdgeBBox);
-
-          if (tEdgeBBox.IntersectBox(lEdgeBBox))
-          {
-            if (!can_cross[cell_id].size())
-              can_cross[cell_id].reserve(10);
-
-            can_cross[cell_id].emplace_back(e0, e1);
-            break;
-          }
+          can_cross[cell_id].emplace_back(e0, e1);
         }
       }
     }
 
     double loop_bounds[6] = {};
     loops->GetCellBounds(loop_id, loop_bounds);
-    loop_bounds[4] = 0.0;
-    loop_bounds[5] = 0.0;
+    memset(loop_bounds + 4, 0, 2 * sizeof(double));
     loops_info_holder[loop_id].first = vtkBoundingBox(loop_bounds);
   }
-  vtkDebugMacro(<< "Obtained loop edge bounding boxes");
+  vtkDebugMacro(<< "Obtained candidate cells.");
+  ///> Finished obtaining candidate cells.
 
-  vtkNew<vtkUnsignedCharArray> acquisition;
-  acquisition->SetName("Acquired");
-  acquisition->SetNumberOfComponents(1);
-  acquisition->Allocate(num_points + num_loops_points);
-  vtkDebugMacro(<< "Alloc'd " << num_points + num_loops_points << " towards acquistion");
-
-  // roughly, a quarter no. of cells
-  int report_every =
-    (num_cells >= 4) ? num_cells >> 2 : (num_cells >= 2 ? num_cells >> 1 : num_cells);
-  vtkDebugMacro(<< "Report progress every " << report_every << " cells");
-
+  ///> Embed loops in candidate cells and remove if needed.
   // strategy for triangles: 1. push triangle into helper,
   //                         2. try to intersect with loops,
   //                         3. pop child triangles into output poly-data
@@ -1423,11 +1391,21 @@ int tscTriSurfaceCutter::RequestData(vtkInformation* vtkNotUsed(request),
     out_lines, out_polys, out_strips, in_cd, out_verts_cd, out_lines_cd, out_polys_cd,
     out_strips_cd, this->PointLocator, in_points, in_loop_points, acquisition);
 
+  // roughly, a quarter no. of cells
+  int report_every =
+    (num_cells >= 4) ? num_cells >> 2 : (num_cells >= 2 ? num_cells >> 1 : num_cells);
+  vtkDebugMacro(<< "Report progress every " << report_every << " cells");
+
+  this->PointLocator->SetTolerance(this->Tolerance);
+  this->PointLocator->InitPointInsertion(out_pts, out_bounds);
+  vtkDebugMacro(<< "Init'd point insertion");
   auto input_iter = vtk::TakeSmartPointer(input->NewCellIterator());
   auto cell_pt_ids = vtkSmartPointer<vtkIdList>::New();
   for (input_iter->InitTraversal(); !input_iter->IsDoneWithTraversal(); input_iter->GoToNextCell())
   {
     const vtkIdType& cell_id = input_iter->GetCellId();
+    // if (cell_id == 4486)
+    //   raise(SIGTRAP);
     const int& cell_type = input->GetCellType(cell_id);
     vtkDebugMacro(<< "Processing " << cell_id);
 
@@ -1446,7 +1424,7 @@ int tscTriSurfaceCutter::RequestData(vtkInformation* vtkNotUsed(request),
           const SegmentsType& loop_edges = cross_edges->second;
           vtkDebugMacro(<< "Crosses " << loop_edges.size() << " edges");
 
-          vtkDebugMacro(<< "Intersect with line, tol: " << this->Tolerance);
+          vtkDebugMacro(<< "Intersect, tol: " << this->Tolerance);
           helper.triIntersect(loop_edges, this->Tolerance);
 
           vtkDebugMacro(<< "Triangulate, tol: " << this->Tolerance);
@@ -1476,8 +1454,9 @@ int tscTriSurfaceCutter::RequestData(vtkInformation* vtkNotUsed(request),
     if (!(cell_id % report_every))
       this->UpdateProgress(static_cast<double>(cell_id) / num_cells);
   }
+  ///> Finished embed and removal.
 
-  // finalize
+  ///> Finalize output ds.
   out_pts->Squeeze();
   output->SetPoints(out_pts);
   out_verts->Squeeze();
@@ -1495,11 +1474,13 @@ int tscTriSurfaceCutter::RequestData(vtkInformation* vtkNotUsed(request),
     acquisition->Squeeze();
     out_pd->AddArray(acquisition);
   }
-  vtkDebugMacro(<< "Finalized points, pointData");
 
   const vtkIdType& num_out_lines = output->GetNumberOfLines();
   const vtkIdType& num_out_polys = output->GetNumberOfPolys();
   const vtkIdType& num_out_cells = num_verts + num_out_lines + num_out_polys + num_strips;
+
+  vtkDebugMacro("Points: " << out_pts->GetNumberOfPoints());
+  vtkDebugMacro("Lines: " << num_out_lines << " Polys: " << num_out_polys);
 
   const vtkIdType nvl = num_verts + num_out_lines;
   const vtkIdType nvlp = nvl + num_out_polys;
@@ -1536,7 +1517,7 @@ int tscTriSurfaceCutter::RequestData(vtkInformation* vtkNotUsed(request),
 
     out_cd->SetScalars(constrained);
   }
-  vtkDebugMacro(<< "Finalized cells, cellData");
+  ///> Finished finalizing output data structures.
 
   return 1;
 }
