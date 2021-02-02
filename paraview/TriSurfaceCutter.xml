@@ -4,8 +4,8 @@
         <Documentation
             long_help="Cut a triangulated surface with one or more polygons."
             short_help="Cut triangulated surfaces with polygons">
-            This filter is geometrically based, unlike vtkClipDataSet and vtkClipPolyData
-            (both of which are scalar-based).
+            This filter is a geometrically based 2d triangulated surface cutter, 
+            unlike **vtkClipDataSet** and **vtkClipPolyData** (both of which are scalar-based).
             
             It crops an input vtkPolyData consisting of triangles
             with loops specified by a second input containing polygons.
@@ -18,9 +18,13 @@
 
             It is possible to output a pure embedding or a pure removal.
             
+            Linear cells other than triangles will be passed through.
+            
+            Line segments and polylines from input will be marked as constraints.
+            
             Note:
-            PointData is interpolated to output.
-            CellData is copied over to both constraint lines, new triangles
+                Input point-data is interpolated to output.
+                Input cell-data is copied to output.
         </Documentation>
         <InputProperty
             name="InputMesh"
@@ -35,7 +39,7 @@
             </DataTypeDomain>
             <Documentation>
                 Set input mesh polydata. 
-                It should ideally have only cells of type VTK_TRIANGLE.
+                It should ideally have cells of type VTK_TRIANGLE.
                 
                 Note:
                 Cells other than triangles will be passed through to output.
@@ -149,7 +153,7 @@
             number_of_elements="1"
             default_values="1.0e-6">
             <Documentation>
-                Set numeric tolerance to aid unique point insertion and intersection math.
+                Provide a suitable numeric tolerance to aid unique point insertion and for use in intersection math.
             </Documentation>
         </DoubleVectorProperty>
 
@@ -175,7 +179,7 @@
         </ProxyListDomain>
         <Documentation>
             This property specifies an incremental point locator for
-            merging duplicate / coincident points.
+            merging duplicate / coincident points. It operates with specified tolerance.
         </Documentation>
       </ProxyProperty>
     </SourceProxy>

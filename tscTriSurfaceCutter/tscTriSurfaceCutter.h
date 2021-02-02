@@ -3,13 +3,10 @@
  *
  * @file  tscTriSurfaceCutter.h
  * @class tscTriSurfaceCutter
- * @brief Cut triangulated surfaces with polygons
+ * @brief Cut a triangulated surface with one or more polygons.
  *
- * Cut a triangulated surface with one or more polygons.
  * This filter is geometrically based, unlike vtkClipDataSet and vtkClipPolyData
  * (both of which are scalar-based).
- *
- * This filter is geometrically based, unlike vtkClipDataSet and vtkClipPolyData.
  *             
  * It crops an input vtkPolyData consisting of triangles
  * with loops specified by a second input containing polygons.
@@ -25,9 +22,9 @@
  * 
  * It is possible to output a pure embedding or a pure removal.
  *             
- * Note:
- * PointData is interpolated to output.
- * CellData is copied over to both constraint lines, new triangles
+ * @note:
+ * Input point-data is interpolated to output.
+ * Input cell-data is copied to output.
  *
  * @sa
  * vtkClipDataSet vtkClipPolyData
@@ -182,8 +179,8 @@ protected:
 
   int RequestData(vtkInformation *request, vtkInformationVector **inputVector,
                   vtkInformationVector *outputVector) override;
-  int FillInputPortInformation(int port, vtkInformation *info) override;
-  int FillOutputPortInformation(int port, vtkInformation *info) override;
+  int FillInputPortInformation(int vtkNotUsed(port), vtkInformation *info) override;
+  int FillOutputPortInformation(int vtkNotUsed(port), vtkInformation *info) override;
 
 private:
   tscTriSurfaceCutter(const tscTriSurfaceCutter &) = delete;
@@ -192,7 +189,36 @@ private:
 
 namespace tsc_detail
 {
+  // Convention: in a triangle - v: vertex, e: edge
+  // with vertices v0--v1--v2,
+  // e0 = v0--v1, e1 = v1--v2, e2 = v2--v0;
+  const std::array<std::pair<vtkIdType, vtkIdType>, 3> TRIEDGES = { std::make_pair(0, 1),
+    std::make_pair(1, 2), std::make_pair(2, 0) };
+  const vtkIdType TRIOPPEDGE[3] = { 1, 2, 0 };  // edge id opposite to a vertex
+  const vtkIdType TRIOPPVERTS[3] = { 2, 0, 1 }; // vertex id opposite to an edge
 
+  enum class PointInTriangle
+  {
+    OnVertex,
+    OnEdge,
+    Inside,
+    Outside,
+    Degenerate
+  };
+
+  enum class PointOnLine
+  {
+    OnVertex,
+    Inside,
+    Outside,
+  };
+
+  enum class IntersectType
+  {
+    NoIntersection = 0,
+    Intersect,
+    Junction
+  };
   // A child is born when a parent triangle/line crosses a loop's edge.
   struct Child
   {
