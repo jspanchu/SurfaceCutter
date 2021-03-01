@@ -216,7 +216,8 @@ namespace tsc_detail
   // Determine a point's location on a line segment.
   // is it 1. on one of the end vertices?
   //       2. inside/outside ?
-  tsc_detail::PointOnLine onLine(const double p[3], const double p1[3], const double p2[3], const double& tol)
+  tsc_detail::PointOnLine onLine(
+    const double p[3], const double p1[3], const double p2[3], const double& tol)
   {
     double t{ 0 };
     const double dist2 = vtkLine::DistanceToLine(p, p1, p2, t, nullptr);
@@ -249,23 +250,11 @@ namespace tsc_detail
   }
 
   // Quantify return status of vtkLine::Intersection(...)
-  tsc_detail::IntersectType robustIntersect(const double* p1, const double* p2, const double* q1,
-    const double* q2, double px[3], const double& tol)
+  tsc_detail::IntersectType robustIntersect(
+    double* p1, double* p2, double* q1, double* q2, double px[3], const double& tol)
   {
     double u(0.0), v(0.0);
-    const int vtk_intersect = vtkLine::Intersection(p1, p2, q1, q2, u, v);
-
-    double u_proj[3] = { 0., 0., 0. };
-    double v_proj[3] = { 0., 0., 0. };
-
-    for (unsigned short dim = 0; dim < 2; ++dim) // ignore 3rd dim
-    {
-      u_proj[dim] = p1[dim] + u * (p2[dim] - p1[dim]);
-      v_proj[dim] = q1[dim] + v * (q2[dim] - q1[dim]);
-    }
-
-    double closest_dist = vtkMath::Distance2BetweenPoints(u_proj, v_proj);
-    double tol2 = tol * tol;
+    int vtk_intersect = 0;
 
     // Note: this section is based on consts def'd in vtkLine.cxx.
     // Keep in mind to update this when that changes.
@@ -273,50 +262,56 @@ namespace tsc_detail
     // 0: vtkLine::NoIntersect
     // 2: vtkLine::Intersect
     // 3: vtkLine::OnLine (Consider this as tsc_detail::IntersectType::NoIntersection)
-    if (vtk_intersect != 2)
-      return tsc_detail::IntersectType::NoIntersection;
-    else if (closest_dist < tol2)
+    if ((vtk_intersect = vtkLine::Intersection(p1, p2, q1, q2, u, v)) == 2)
     {
-      // T type-1
-      if (std::fabs(1.0 - u) <= tol && closest_dist < tol2)
+      // This test checks for vertex and edge intersections
+      // For example
+      //  Vertex intersection
+      //    (u=0 v=0), (u=0 v=1), (u=1 v=0), (u=1 v=0)
+      //  Edge intersection
+      //    (u=0 v!=0 v!=1), (u=1 v!=0 v!=1)
+      //    (u!=0 u!=1 v=0), (u!=0 u!=1 v=1)
+      if ((tol < u) && (u < 1.0 - tol) && (tol < v) && (v < 1.0 - tol))
       {
-        std::copy(p2, p2 + 3, px);
-        return tsc_detail::IntersectType::Junction;
+        for (unsigned short dim = 0; dim < 2; ++dim)
+        {
+          px[dim] = p1[dim] + u * (p2[dim] - p1[dim]);
+        }
+        return tsc_detail::IntersectType::Intersect;
       }
-      else if (std::fabs(1.0 - v) <= tol && closest_dist < tol2)
-      {
-        std::copy(q2, q2 + 3, px);
-        return tsc_detail::IntersectType::Junction;
-      }
-
-      // T type-2
-      if (std::fpclassify(u) == FP_ZERO && closest_dist < tol2)
-      {
-        std::copy(p1, p1 + 3, px);
-        return tsc_detail::IntersectType::Junction;
-      }
-      else if (std::fpclassify(v) == FP_ZERO && closest_dist < tol2)
-      {
-        std::copy(q1, q1 + 3, px);
-        return tsc_detail::IntersectType::Junction;
-      }
-
-      // T type-3
-      if (std::fabs(u) <= tol && closest_dist < tol2)
-      {
-        std::copy(p1, p1 + 3, px);
-        return tsc_detail::IntersectType::Junction;
-      }
-      else if (std::fabs(v) <= tol && closest_dist < tol2)
-      {
-        std::copy(q1, q1 + 3, px);
-        return tsc_detail::IntersectType::Junction;
-      }
-      // Perfect
       else
       {
-        std::copy(v_proj, v_proj + 3, px);
-        return tsc_detail::IntersectType::Intersect;
+        return tsc_detail::IntersectType::NoIntersection;
+      }
+    }
+    else if (vtk_intersect == 3)
+    {
+      double p21[3], c[3], c2[3];
+      vtkMath::Subtract(p2, p1, p21);
+      double tol2 = /*tolerance * tolerance*/ 1.0e-8 * sqrt(vtkMath::Dot(p21, p21));
+      if (vtkLine::DistanceBetweenLines(p1, p2, q1, q2, c, c2, u, v) > tol2)
+      {
+        return tsc_detail::IntersectType::NoIntersection;
+      }
+      vtkLine::DistanceToLine(p1, p2, q1, u, px);
+      if (-tol <= u && u <= (1.0 + tol))
+      {
+        return tsc_detail::IntersectType::Junction;
+      }
+      vtkLine::DistanceToLine(p2, q1, q2, u, px);
+      if (-tol <= u && u <= (1.0 + tol))
+      {
+        return tsc_detail::IntersectType::Junction;
+      }
+      vtkLine::DistanceToLine(q1, p1, p2, u, px);
+      if (-tol <= u && u <= (1.0 + tol))
+      {
+        return tsc_detail::IntersectType::Junction;
+      }
+      vtkLine::DistanceToLine(q2, p1, p2, u, px);
+      if (-tol <= u && u <= (1.0 + tol))
+      {
+        return tsc_detail::IntersectType::Junction;
       }
     }
 
@@ -489,8 +484,8 @@ namespace tsc_detail
             const vtkIdType& b1 = edge.first;
             const vtkIdType& b2 = edge.second;
 
-            const double* q1 = p2d[b1];
-            const double* q2 = p2d[b2];
+            double* q1 = p2d[b1];
+            double* q2 = p2d[b2];
 
             const auto intersect_type = tsc_detail::robustIntersect(p1, p2, q1, q2, px, tol);
             if (intersect_type == tsc_detail::IntersectType::Intersect)
@@ -807,8 +802,8 @@ namespace tsc_detail
 
       auto points = vtk::DataArrayTupleRange<3>(points_arr);
 
-      const double pl[3] = { points[vl][0], points[vl][1], 0.0 };
-      const double pm[3] = { points[vm][0], points[vm][1], 0.0 };
+      double pl[3] = { points[vl][0], points[vl][1], 0.0 };
+      double pm[3] = { points[vm][0], points[vm][1], 0.0 };
 
       vtkIdType* neighbors_vl = nullptr;
       vtkIdType num_neis_vl = 0;
@@ -831,8 +826,8 @@ namespace tsc_detail
           const vtkIdType& id1 = edge.second;
           const vtkIdType& vi = point_ids[id0];
           const vtkIdType& vj = point_ids[id1];
-          const double pi[3] = { points[vi][0], points[vi][1], 0.0 };
-          const double pj[3] = { points[vj][0], points[vj][1], 0.0 };
+          double pi[3] = { points[vi][0], points[vi][1], 0.0 };
+          double pj[3] = { points[vj][0], points[vj][1], 0.0 };
 
           double px[3] = {};
           const auto intersect_type = tsc_detail::robustIntersect(pi, pj, pl, pm, px, tol);
