@@ -31,13 +31,16 @@
  *
  */
 
-#include <vtkPolyDataAlgorithm.h>
 #include <tscTriSurfaceCutterModule.h>
 
+#include <vector>
+
 #include "vtkAbstractCellLocator.h"
+#include "vtkGenericCell.h"
 #include "vtkIncrementalPointLocator.h"
-#include "vtkTriangle.h"
+#include "vtkPolyDataAlgorithm.h"
 #include "vtkSmartPointer.h"
+#include "vtkTriangle.h"
 
 class vtkPolyData;
 
@@ -58,26 +61,6 @@ public:
   vtkBooleanMacro(AccelerateCellLocator, bool);
   vtkSetMacro(AccelerateCellLocator, bool);
   vtkGetMacro(AccelerateCellLocator, bool);
-  //@}
-
-  //@{
-  /**
-   * Append an array to output point data that colors acquired points. Default:
-   * On
-   */
-  vtkBooleanMacro(ColorAcquiredPts, bool);
-  vtkSetMacro(ColorAcquiredPts, bool);
-  vtkGetMacro(ColorAcquiredPts, bool);
-  //@}
-
-  //@{
-  /**
-   * Append an array to output cell data which colors constrained lines.
-   * Default: On
-   */
-  vtkBooleanMacro(ColorLoopEdges, bool);
-  vtkSetMacro(ColorLoopEdges, bool);
-  vtkGetMacro(ColorLoopEdges, bool);
   //@}
 
   //@{
@@ -167,8 +150,6 @@ protected:
   ~tscTriSurfaceCutter() override;
 
   bool AccelerateCellLocator;
-  bool ColorAcquiredPts;
-  bool ColorLoopEdges;
   bool Embed;
   bool InsideOut;
   bool Remove;

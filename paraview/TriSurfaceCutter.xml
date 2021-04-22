@@ -110,30 +110,6 @@
         </IntVectorProperty>
 
         <IntVectorProperty
-            name="ColorAcquiredPts"
-            command="SetColorAcquiredPts"
-            label="Color Acquired Points"
-            number_of_elements="1"
-            default_values="1">
-            <BooleanDomain name="bool"/>
-            <Documentation>
-                Check this box to color acquired(from loop polygons) points. Default is On.
-            </Documentation>
-        </IntVectorProperty>
-
-        <IntVectorProperty
-            name="ColorLoopEdges"
-            command="SetColorLoopEdges"
-            label="Color Loop Edge"
-            number_of_elements="1"
-            default_values="1">
-            <BooleanDomain name="bool"/>
-            <Documentation>
-                Check this box to color constrained line segments (from loop polygons). Default is On.
-            </Documentation>
-        </IntVectorProperty>
-
-        <IntVectorProperty
             name="InsideOut"
             command="SetInsideOut"
             label="Inside Out"

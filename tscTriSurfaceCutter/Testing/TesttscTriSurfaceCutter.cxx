@@ -1,3 +1,5 @@
+#define WRITE_TSC_TEST_DATA 0
+
 #include "tscTriSurfaceCutter.h"
 #include <vtkArrayDispatch.h>
 #include <vtkCellData.h>
@@ -12,7 +14,9 @@
 #include <vtkPolyData.h>
 #include <vtkSmartPointer.h>
 #include <vtkXMLMultiBlockDataReader.h>
+#if WRITE_TSC_TEST_DATA
 #include <vtkXMLMultiBlockDataWriter.h>
+#endif
 
 #include <array>
 #include <sstream>
@@ -25,7 +29,7 @@ using dispatchAA =
 
 struct DataArrComparator
 {
-  template<typename ScalarsArr1T, typename = vtk::detail::EnableIfVtkDataArray<ScalarsArr1T>,
+  template <typename ScalarsArr1T, typename = vtk::detail::EnableIfVtkDataArray<ScalarsArr1T>,
     typename ScalarsArr2T, typename = vtk::detail::EnableIfVtkDataArray<ScalarsArr2T>>
   void operator()(ScalarsArr1T* scalarsArr1, ScalarsArr2T* scalarsArr2, bool& success)
   {
@@ -164,7 +168,9 @@ int main()
   vtkNew<vtkPoints> tpoints;
   vtkNew<vtkCellArray> tCell;
   vtkNew<vtkXMLMultiBlockDataReader> reader;
+#if WRITE_TSC_TEST_DATA
   vtkNew<vtkXMLMultiBlockDataWriter> writer;
+#endif
   vtkNew<vtkMultiBlockDataSet> inOutTrueBlks, inOutFalseBlks;
 
   triangle->SetPoints(tpoints);
@@ -218,10 +224,13 @@ int main()
     surfCutter->Update();
 
     vtkSmartPointer<vtkPolyData> cut = surfCutter->GetOutput();
+#if WRITE_TSC_TEST_DATA
+    vtkNew<vtkPolyData> test;
+    test->DeepCopy(cut);
+    inOutTrueBlks->SetBlock(i, test);
+#else
     vtkSmartPointer<vtkPolyData> test = vtkPolyData::SafeDownCast(inOutTrueBlks->GetBlock(i));
-    // vtkNew<vtkPolyData> test;
-    // test->DeepCopy(cut);
-    // inOutTrueBlks->SetBlock(i, test);
+#endif
 
     if (compare(cut, test) == EXIT_FAILURE)
     {
@@ -231,10 +240,11 @@ int main()
 
     std::cout << "InsideOut: True | Test " << i << ": Passed\n";
   }
-  // writer->SetInputData(inOutTrueBlks);
-  // writer->SetFileName("InOutTrue.vtm");
-  // writer->Write();
-
+#if WRITE_TSC_TEST_DATA
+  writer->SetInputData(inOutTrueBlks);
+  writer->SetFileName("InOutTrue.vtm");
+  writer->Write();
+#endif
   surfCutter->SetInsideOut(false);
 
   reader->SetFileName("Data/InOutFalse.vtm");
@@ -256,22 +266,27 @@ int main()
     surfCutter->Update();
 
     vtkSmartPointer<vtkPolyData> cut = surfCutter->GetOutput();
+#if WRITE_TSC_TEST_DATA
+    vtkNew<vtkPolyData> test;
+    test->DeepCopy(cut);
+    inOutFalseBlks->SetBlock(i, test);
+#else
     vtkSmartPointer<vtkPolyData> test = vtkPolyData::SafeDownCast(inOutFalseBlks->GetBlock(i));
-    // vtkNew<vtkPolyData> test;
-    // test->DeepCopy(cut);
-    // inOutFalseBlks->SetBlock(i, test);
+#endif
 
     if (compare(cut, test) == EXIT_FAILURE)
     {
       std::cerr << "InsideOut: False | Test " << i << ": Failed\n";
       return EXIT_FAILURE;
     }
-    
+
     std::cout << "InsideOut: False| Test " << i << ": Passed\n";
   }
-  // writer->SetInputData(inOutFalseBlks);
-  // writer->SetFileName("InOutFalse.vtm");
-  // writer->Write();
+#if WRITE_TSC_TEST_DATA
+  writer->SetInputData(inOutFalseBlks);
+  writer->SetFileName("InOutFalse.vtm");
+  writer->Write();
+#endif
 
   return EXIT_SUCCESS;
 }

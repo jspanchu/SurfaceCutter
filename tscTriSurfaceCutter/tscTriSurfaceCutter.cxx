@@ -1,14 +1,8 @@
 #include "tscTriSurfaceCutter.h"
 
 #include <algorithm>
-#include <cmath>
-#include <cstring>
-#include <iterator>
-#include <numeric>
 #include <set>
 #include <unordered_map>
-#include <unordered_set>
-#include <utility>
 #include <vector>
 
 #include <vtkArrayDispatch.h>
@@ -23,21 +17,16 @@
 #include <vtkDataArrayRange.h>
 #include <vtkDelaunay2D.h>
 #include <vtkGenericCell.h>
+#include <vtkIdList.h>
 #include <vtkInformation.h>
 #include <vtkInformationVector.h>
 #include <vtkLine.h>
-#include <vtkLogger.h>
 #include <vtkMath.h>
 #include <vtkMergePoints.h>
 #include <vtkObjectFactory.h>
 #include <vtkPointData.h>
 #include <vtkPolyData.h>
-#include <vtkSmartPointer.h>
 #include <vtkStaticCellLocator.h>
-#include <vtkThreadedCompositeDataPipeline.h>
-#include <vtkTriangle.h>
-#include <vtkTypeInt32Array.h>
-#include <vtkUnsignedCharArray.h>
 
 using dispatchRR =
   vtkArrayDispatch::Dispatch2ByValueType<vtkArrayDispatch::Reals, vtkArrayDispatch::Reals>;
@@ -52,8 +41,6 @@ vtkStandardNewMacro(tscTriSurfaceCutter);
 
 tscTriSurfaceCutter::tscTriSurfaceCutter()
   : AccelerateCellLocator(true)
-  , ColorAcquiredPts(true)
-  , ColorLoopEdges(true)
   , Embed(true)
   , InsideOut(true) // default: remove portions outside loop polygons.
   , Remove(true)
@@ -61,7 +48,6 @@ tscTriSurfaceCutter::tscTriSurfaceCutter()
 {
   this->SetNumberOfInputPorts(2);
   this->SetNumberOfOutputPorts(1);
-  this->DebugOn();
   this->CreateDefaultLocators();
 }
 
@@ -96,7 +82,7 @@ namespace tsc_detail
     /**
      * @brief Implementation to fill a container with children triangles.
      * @tparam PointsArrT T
-     * @param points_arr  coordinates that make up parent triangle and acquired points
+     * @param points_arr  coordinates that make up parent triangle
      * @param polys       point ids that make up children triangles
      * @param children    collect children into this container
      */
@@ -359,14 +345,13 @@ namespace tsc_detail
      * @param points2_arr   loops' points' data array
      * @param lines         point ids of line segments
      * @param constraints   list of segments that make up constraints
-     * @param is_acquired   contains points that have been acquired from lines' points
      * @param tol           numeric tolerance for intersection math.
      *
      */
     template <typename PointsArrT1, typename = vtk::detail::EnableIfVtkDataArray<PointsArrT1>,
       typename PointsArrT2, typename = vtk::detail::EnableIfVtkDataArray<PointsArrT1>>
     void operator()(PointsArrT1* points1_arr, PointsArrT2* points2_arr, const SegmentsType& lines,
-      SegmentsType& constraints, std::unordered_set<vtkIdType>& is_acquired, const double& tol)
+      SegmentsType& constraints, const double& tol)
     {
       if (!lines.size())
         return;
@@ -435,7 +420,6 @@ namespace tsc_detail
             tsc_detail::interpZ(px, p3d[0], p3d[1], p3d[2], p1_bary_coords);
             inserted = points1_arr->InsertNextTuple(px);
             processed[a1] = inserted;
-            is_acquired.insert(inserted);
           }
           hits.insert(processed[a1]);
         }
@@ -448,7 +432,6 @@ namespace tsc_detail
             tsc_detail::interpZ(px, p3d[0], p3d[1], p3d[2], p2_bary_coords);
             inserted = points1_arr->InsertNextTuple(px);
             processed[a2] = inserted;
-            is_acquired.insert(inserted);
           }
           hits.insert(processed[a2]);
         }
@@ -459,7 +442,6 @@ namespace tsc_detail
           {
             inserted = a1v;
             processed[a1] = inserted;
-            is_acquired.insert(inserted);
           }
           hits.insert(processed[a1]);
         }
@@ -470,7 +452,6 @@ namespace tsc_detail
           {
             inserted = a2v;
             processed[a2] = inserted;
-            is_acquired.insert(inserted);
           }
           hits.insert(processed[a2]);
         }
@@ -519,7 +500,6 @@ namespace tsc_detail
                   tsc_detail::interpZ(px, p3d[0], p3d[1], p3d[2], p1_bary_coords);
                   inserted = points1_arr->InsertNextTuple(px);
                   processed[a1] = inserted;
-                  is_acquired.insert(inserted);
                 }
                 else
                 {
@@ -534,7 +514,6 @@ namespace tsc_detail
                   tsc_detail::interpZ(px, p3d[0], p3d[1], p3d[2], p2_bary_coords);
                   inserted = points1_arr->InsertNextTuple(px);
                   processed[a2] = inserted;
-                  is_acquired.insert(inserted);
                 }
                 else
                 {
@@ -594,6 +573,12 @@ namespace tsc_detail
 
   struct PopTrisImpl
   {
+    vtkNew<vtkIdList> popped_cell_pts;
+    PopTrisImpl()
+    {
+      this->popped_cell_pts->Allocate(3);
+    }
+    
     /**
      * @brief Populate output structures and arrays with children.
      *
@@ -604,8 +589,6 @@ namespace tsc_detail
      * @param points2_arr     loops' points' data array
      * @param inside_out      inside out nature of all loop polygons
      * @param loops           [<bbox, ptIds>] for each loop polygon
-     * @param is_acquired     indicates points that were acquired
-     * @param constraints     a list of line segments that were constrained
      * @param parent          the og triangle that we're processing rn
      * @param in_pd           input point data
      * @param out_pd          output point data
@@ -615,27 +598,23 @@ namespace tsc_detail
      * @param out_polys_cd     output cell data (for triangles)
      * @param out_lines_cd    output cell data (for lines)
      * @param locator         used to insert unique points in output
-     * @param acquisition     colors acquired points in output
      * @param fallthrough     avoid in/out tests
+     * @param cell_type       parent cell type
      *
      */
     template <typename PointsArrT1, typename PointsArrT2>
     void operator()(PointsArrT1* points1_arr, PointsArrT2* points2_arr, const bool& inside_out,
-      const LoopsInfoType& loops, const std::unordered_set<vtkIdType>& is_acquired,
-      const SegmentsType& constraints, Parent* parent, vtkPointData* in_pd, vtkPointData* out_pd,
+      const LoopsInfoType& loops, Parent* parent, vtkPointData* in_pd, vtkPointData* out_pd,
       vtkCellArray* out_verts, vtkCellArray* out_lines, vtkCellArray* out_polys,
       vtkCellArray* out_strips, vtkCellData* in_cd, vtkCellData* out_verts_cd,
       vtkCellData* out_lines_cd, vtkCellData* out_polys_cd, vtkCellData* out_strips_cd,
-      vtkIncrementalPointLocator* locator, vtkUnsignedCharArray* acquisition,
-      const bool& fallthrough, const int& cell_type)
+      vtkIncrementalPointLocator* locator, const bool& fallthrough, const int& cell_type)
     {
       auto points_1 = vtk::DataArrayTupleRange<3>(points1_arr);
       auto points_2 = vtk::DataArrayTupleRange<3>(points2_arr);
 
       vtkSmartPointer<vtkIdList> root_pt_ids = parent->PointIds;
-      const vtkIdType& num_points = parent->Points->GetNumberOfPoints();
       const vtkIdType& root_id = parent->cellId;
-      std::vector<vtkIdType> old_to_new_pt_ids(num_points, -1);
 
       for (auto& child : parent->children)
       {
@@ -674,13 +653,6 @@ namespace tsc_detail
             continue;
           }
         }
-
-        double dist2(0.);
-        double* closest = nullptr;
-        double parametric_coords[3] = {};
-        double weights[3] = {};
-        int sub_id{ 0 };
-        vtkIdType new_pt_id(-1);
 
         vtkCellArray* out_cells = nullptr;
         vtkCellData* out_cd = nullptr;
@@ -724,44 +696,28 @@ namespace tsc_detail
         }
         if (out_cells && out_cd)
         {
-          out_cells->InsertNextCell(child.point_ids->GetNumberOfIds());
+          double dist2(0.);
+          double* closest = nullptr;
+          double parametric_coords[3] = {};
+          std::vector<double> weights(parent->PointIds->GetNumberOfIds(), 0.);
+          int sub_id{ 0 };
+          this->popped_cell_pts->Reset();
+
           for (const auto& pt : *(child.point_ids))
           {
+            vtkIdType new_pt_id(-1);
             const double p[3] = { points_1[pt][0], points_1[pt][1], points_1[pt][2] };
             if (locator->InsertUniquePoint(p, new_pt_id))
             {
-              parent->EvaluatePosition(p, closest, sub_id, parametric_coords, dist2, weights);
-              out_pd->InterpolatePoint(in_pd, new_pt_id, root_pt_ids, weights);
-
-              if (is_acquired.find(pt) != is_acquired.end())
-                acquisition->InsertNextValue('\001');
-              else
-                acquisition->InsertNextValue('\000');
+              parent->EvaluatePosition(
+                p, closest, sub_id, parametric_coords, dist2, weights.data());
+              out_pd->InterpolatePoint(in_pd, new_pt_id, root_pt_ids, weights.data());
             }
-            old_to_new_pt_ids[pt] = new_pt_id;
-            out_cells->InsertCellPoint(new_pt_id);
+            this->popped_cell_pts->InsertNextId(new_pt_id);
           }
-          out_cd->InsertNextTuple(root_id, in_cd);
+          const auto& new_cell_id = out_cells->InsertNextCell(this->popped_cell_pts);
+          out_cd->CopyData(in_cd, root_id, new_cell_id);
         }
-      }
-
-      // insert line segments
-      for (const SegmentType& edge : constraints)
-      {
-        const vtkIdType line[2] = { old_to_new_pt_ids[edge.first], old_to_new_pt_ids[edge.second] };
-        if (line[0] < 0 || line[1] < 0)
-        {
-          //__debugbreak(); // triangle with this constraint was rejected?
-          continue;
-        }
-        else if (line[0] == line[1])
-        {
-          // __debugbreak(); // degenerate
-          continue;
-        }
-
-        out_lines->InsertNextCell(2, line);
-        out_lines_cd->InsertNextTuple(root_id, in_cd);
       }
     }
   };
@@ -900,7 +856,7 @@ namespace tsc_detail
       vtkCellArray* out_lines_, vtkCellArray* out_polys_, vtkCellArray* out_strips_,
       vtkCellData* in_cd_, vtkCellData* out_verts_cd_, vtkCellData* out_lines_cd_,
       vtkCellData* out_polys_cd_, vtkCellData* out_strips_cd_, vtkIncrementalPointLocator* locator_,
-      vtkPoints* in_points_, vtkPoints* in_loop_points_, vtkUnsignedCharArray* acquisition_)
+      vtkPoints* in_points_, vtkPoints* in_loop_points_)
       : loops_info_holder(loops_info_holder_)
       , inside_out(inside_out_)
       , out_verts(out_verts_)
@@ -917,9 +873,7 @@ namespace tsc_detail
       , out_pd(out_pd_)
       , in_points(in_points_)
       , in_loop_points(in_loop_points_)
-      , acquisition(acquisition_)
     {
-      in_acquisition = vtkUnsignedCharArray::SafeDownCast(in_pd->GetArray("Acquired"));
       del2d->SetProjectionPlaneMode(VTK_DELAUNAY_XY_PLANE);
       del2d->SetInputData(input);
       del2d->SetOffset(100.0); // bump this if Delaunay output is concave
@@ -932,16 +886,14 @@ namespace tsc_detail
      */
     void pop(const bool& fallthrough, const int& cell_type)
     {
-      PopTrisImpl worker;
       vtkDataArray* points1_arr = parent->Points->GetData();
       vtkDataArray* points2_arr = in_loop_points->GetData();
-      if (!dispatchRR::Execute(points1_arr, points2_arr, worker, inside_out, loops_info_holder,
-            is_acquired, constraints, parent, in_pd, out_pd, out_verts, out_lines, out_polys,
-            out_strips, in_cd, out_verts_cd, out_lines_cd, out_polys_cd, out_strips_cd, locator,
-            acquisition, fallthrough, cell_type))
-        worker(points1_arr, points2_arr, inside_out, loops_info_holder, is_acquired, constraints,
-          parent, in_pd, out_pd, out_verts, out_lines, out_polys, out_strips, in_cd, out_verts_cd,
-          out_lines_cd, out_polys_cd, out_strips_cd, locator, acquisition, fallthrough, cell_type);
+      if (!dispatchRR::Execute(points1_arr, points2_arr, this->pop_tris_worker, inside_out, loops_info_holder,
+            parent, in_pd, out_pd, out_verts, out_lines, out_polys, out_strips, in_cd, out_verts_cd,
+            out_lines_cd, out_polys_cd, out_strips_cd, locator, fallthrough, cell_type))
+        this->pop_tris_worker(points1_arr, points2_arr, inside_out, loops_info_holder, parent, in_pd, out_pd,
+          out_verts, out_lines, out_polys, out_strips, in_cd, out_verts_cd, out_lines_cd,
+          out_polys_cd, out_strips_cd, locator, fallthrough, cell_type);
     }
 
     /**
@@ -991,15 +943,6 @@ namespace tsc_detail
       for (vtkIdType i = 0; i < point_ids->GetNumberOfIds(); ++i)
       {
         polys->InsertCellPoint(i);
-
-        // superpose input's acquisition
-        if (in_acquisition)
-        {
-          if (in_acquisition->GetTypedComponent(point_ids->GetId(i), 0))
-          {
-            is_acquired.insert(i);
-          }
-        }
       }
 
       vtkDataArray* points1_arr = parent->Points->GetData();
@@ -1016,7 +959,6 @@ namespace tsc_detail
     void reset()
     {
       constraints.clear();
-      is_acquired.clear();
       parent->Reset();
       polys->Reset();
     }
@@ -1080,9 +1022,8 @@ namespace tsc_detail
       TriIntersect2dImpl worker;
       vtkDataArray* points1_arr = parent->Points->GetData();
       vtkDataArray* points2_arr = in_loop_points->GetData();
-      if (!dispatchRR::Execute(
-            points1_arr, points2_arr, worker, lines, constraints, is_acquired, tol))
-        worker(points1_arr, points2_arr, lines, constraints, is_acquired, tol);
+      if (!dispatchRR::Execute(points1_arr, points2_arr, worker, lines, constraints, tol))
+        worker(points1_arr, points2_arr, lines, constraints, tol);
     }
 
     /**
@@ -1093,8 +1034,8 @@ namespace tsc_detail
     inline void update() { parent->UpdateChildren(polys); }
 
     vtkNew<Parent> parent;
+    PopTrisImpl pop_tris_worker;
     SegmentsType constraints;
-    std::unordered_set<vtkIdType> is_acquired;
     const LoopsInfoType& loops_info_holder;
     bool inside_out;
     vtkNew<vtkCellArray> polys;
@@ -1107,8 +1048,6 @@ namespace tsc_detail
     vtkIncrementalPointLocator* locator = nullptr;
     vtkPointData *in_pd = nullptr, *out_pd = nullptr;
     vtkPoints *in_points = nullptr, *in_loop_points = nullptr;
-    vtkUnsignedCharArray* acquisition = nullptr;
-    vtkUnsignedCharArray* in_acquisition = nullptr;
   };
 
   Child::Child()
@@ -1162,12 +1101,10 @@ namespace tsc_detail
 int tscTriSurfaceCutter::RequestData(vtkInformation* vtkNotUsed(request),
   vtkInformationVector** inputVector, vtkInformationVector* outputVector)
 {
-  vtkSmartPointer<vtkPolyData> input =
-    vtkPolyData::GetData(inputVector[0]->GetInformationObject(0));
-  vtkSmartPointer<vtkPolyData> loops =
-    vtkPolyData::GetData(inputVector[1]->GetInformationObject(0));
+  vtkSmartPointer<vtkPolyData> input = vtkPolyData::GetData(inputVector[0]);
+  vtkSmartPointer<vtkPolyData> loops = vtkPolyData::GetData(inputVector[1]);
 
-  vtkSmartPointer<vtkPolyData> output = vtkPolyData::GetData(outputVector->GetInformationObject(0));
+  vtkSmartPointer<vtkPolyData> output = vtkPolyData::GetData(outputVector);
 
   if (!this->Embed && !this->Remove) // do nothing
   {
@@ -1185,7 +1122,7 @@ int tscTriSurfaceCutter::RequestData(vtkInformation* vtkNotUsed(request),
   vtkNew<vtkCellData> out_verts_cd, out_lines_cd, out_polys_cd, out_strips_cd;
 
   const vtkIdType& num_points = input->GetNumberOfPoints();
-  const vtkIdType& num_loops_points = in_loop_points->GetNumberOfPoints();
+  const vtkIdType& num_loops_points = loops->GetNumberOfPoints();
   const vtkIdType& num_cells = input->GetNumberOfCells();
   const vtkIdType& num_verts = input->GetNumberOfVerts();
   const vtkIdType& num_strips = input->GetNumberOfStrips();
@@ -1194,12 +1131,12 @@ int tscTriSurfaceCutter::RequestData(vtkInformation* vtkNotUsed(request),
 
   if (!(num_points && num_polys))
   {
-    vtkErrorMacro(<< "Input mesh is empty.");
+    vtkWarningMacro(<< "Input mesh is empty.");
     return 1;
   }
   if (!(num_loops_points && num_loop_polys))
   {
-    vtkErrorMacro(<< "Input loops are empty.");
+    vtkWarningMacro(<< "Input loops are empty.");
     return 1;
   }
 
@@ -1223,17 +1160,8 @@ int tscTriSurfaceCutter::RequestData(vtkInformation* vtkNotUsed(request),
   out_pts->Allocate(num_points + num_loops_points);
   vtkDebugMacro(<< "Alloc'd " << num_points + num_loops_points << " points");
 
-  if (in_pd->HasArray("Acquired"))
-  {
-    vtkLog(INFO, "Superposing acquisition.");
-  }
   out_pd->InterpolateAllocate(in_pd, num_points + num_loops_points * 3);
   vtkDebugMacro(<< "Alloc'd " << num_points + num_loops_points * 3 << " point data tuples");
-
-  if (in_cd->HasArray("Constrained"))
-  {
-    in_cd->RemoveArray("Constrained");
-  }
 
   out_verts_cd->CopyAllocate(in_cd);
   vtkDebugMacro(<< "Alloc'd CellData for verts");
@@ -1246,12 +1174,6 @@ int tscTriSurfaceCutter::RequestData(vtkInformation* vtkNotUsed(request),
 
   out_strips_cd->CopyAllocate(in_cd);
   vtkDebugMacro(<< "Alloc'd CellData for strips");
-
-  vtkNew<vtkUnsignedCharArray> acquisition;
-  acquisition->SetName("Acquired");
-  acquisition->SetNumberOfComponents(1);
-  acquisition->Allocate(num_points + num_loops_points);
-  vtkDebugMacro(<< "Alloc'd " << num_points + num_loops_points << " towards acquistion");
   ///> Finished allocation
 
   ///> Extend bounds along Z.
@@ -1290,16 +1212,19 @@ int tscTriSurfaceCutter::RequestData(vtkInformation* vtkNotUsed(request),
   possible_crossings.reserve(num_polys);
 
   auto loops_iter = vtk::TakeSmartPointer(loops->NewCellIterator());
-  vtkIdType loop_id{ 0 };
+  vtkIdType loop_id = 0;
   vtkNew<vtkGenericCell> loop;
   vtkNew<vtkIdList> cells;
-  for (loops_iter->InitTraversal(); !loops_iter->IsDoneWithTraversal();
-       loops_iter->GoToNextCell(), ++loop_id)
+  for (loops_iter->InitTraversal(); !loops_iter->IsDoneWithTraversal(); loops_iter->GoToNextCell())
   {
+    const int& loopType = loops_iter->GetCellType();
+    if (loopType == VTK_LINE || loopType == VTK_POLY_LINE || loopType == VTK_VERTEX ||
+      loopType == VTK_POLY_VERTEX || loopType == VTK_TRIANGLE_STRIP)
+    {
+      continue;
+    }
     loops_iter->GetCell(loop);
-
-    vtkSmartPointer<vtkIdList> loop_pts = loops_info_holder[loop_id].second;
-    loop_pts->DeepCopy(loop->GetPointIds());
+    loops_info_holder[loop_id].second->DeepCopy(loop->GetPointIds());
 
     const vtkIdType& num_edges = loop->GetNumberOfEdges();
     vtkDebugMacro(<< "Processing loop: " << loop_id << " (" << num_edges << " edges)");
@@ -1334,8 +1259,9 @@ int tscTriSurfaceCutter::RequestData(vtkInformation* vtkNotUsed(request),
 
     double loop_bounds[6] = {};
     loops->GetCellBounds(loop_id, loop_bounds);
-    memset(loop_bounds + 4, 0, 2 * sizeof(double));
+    std::fill(loop_bounds + 4, loop_bounds + 6, 0.);
     loops_info_holder[loop_id].first = vtkBoundingBox(loop_bounds);
+    ++loop_id;
   }
   vtkDebugMacro(<< "Obtained candidate cells.");
   ///> Finished obtaining candidate cells.
@@ -1347,7 +1273,7 @@ int tscTriSurfaceCutter::RequestData(vtkInformation* vtkNotUsed(request),
   //                         4. reset helper's data structures to prepare for next triangle.
   tsc_detail::SurfCutHelper helper(loops_info_holder, this->InsideOut, in_pd, out_pd, out_verts,
     out_lines, out_polys, out_strips, in_cd, out_verts_cd, out_lines_cd, out_polys_cd,
-    out_strips_cd, this->PointLocator, in_points, in_loop_points, acquisition);
+    out_strips_cd, this->PointLocator, in_points, in_loop_points);
 
   // roughly, a quarter no. of cells
   int report_every =
@@ -1364,7 +1290,8 @@ int tscTriSurfaceCutter::RequestData(vtkInformation* vtkNotUsed(request),
   {
     const vtkIdType& cell_id = input_iter->GetCellId();
     const int& cell_type = input->GetCellType(cell_id);
-    vtkDebugMacro(<< "Processing " << cell_id);
+    if (!(cell_id % report_every))
+      vtkDebugMacro(<< "Processing " << cell_id);
 
     // provide
     cell_pt_ids = input_iter->GetPointIds();
@@ -1379,12 +1306,7 @@ int tscTriSurfaceCutter::RequestData(vtkInformation* vtkNotUsed(request),
         if ((trials != possible_crossings.end()) && this->Embed)
         {
           const SegmentsType& edges = trials->second;
-          vtkDebugMacro(<< "Crosses " << edges.size() << " edges");
-
-          vtkDebugMacro(<< "Intersect, tol: " << this->Tolerance);
           helper.triIntersect(edges, this->Tolerance);
-
-          vtkDebugMacro(<< "Triangulate, tol: " << this->Tolerance);
           helper.triangulate(this->Tolerance);
         }
         break;
@@ -1395,7 +1317,6 @@ int tscTriSurfaceCutter::RequestData(vtkInformation* vtkNotUsed(request),
     helper.update();
 
     // accept/reject
-    vtkDebugMacro(<< "Popping .. ");
     switch (cell_type)
     {
       case VTK_TRIANGLE:
@@ -1426,11 +1347,6 @@ int tscTriSurfaceCutter::RequestData(vtkInformation* vtkNotUsed(request),
   output->SetStrips(out_strips);
 
   out_pd->Squeeze();
-  if (this->ColorAcquiredPts)
-  {
-    acquisition->Squeeze();
-    out_pd->AddArray(acquisition);
-  }
   vtkDebugMacro("Finalized output point attributes. NumPoints: " << out_pts->GetNumberOfPoints());
 
   const vtkIdType& num_out_lines = output->GetNumberOfLines();
@@ -1439,7 +1355,6 @@ int tscTriSurfaceCutter::RequestData(vtkInformation* vtkNotUsed(request),
 
   const vtkIdType nvl = num_verts + num_out_lines;
   const vtkIdType nvlp = nvl + num_out_polys;
-  const vtkIdType nvlps = nvlp + num_strips;
 
   vtkSmartPointer<vtkCellData> out_cd = output->GetCellData();
   out_lines_cd->Squeeze();
@@ -1448,30 +1363,9 @@ int tscTriSurfaceCutter::RequestData(vtkInformation* vtkNotUsed(request),
   out_cd->CopyData(out_verts_cd, 0, num_verts, 0);
   out_cd->CopyData(out_lines_cd, num_verts, num_out_lines, 0);
   out_cd->CopyData(out_polys_cd, nvl, num_out_polys, 0);
-  out_cd->CopyData(out_strips_cd, nvlp, 0);
+  out_cd->CopyData(out_strips_cd, nvlp, num_strips, 0);
   out_cd->Squeeze();
 
-  if (this->ColorLoopEdges)
-  {
-    vtkNew<vtkUnsignedCharArray> constrained;
-    constrained->SetName("Constrained");
-    constrained->SetNumberOfComponents(1);
-    constrained->SetNumberOfTuples(num_out_cells);
-
-    for (vtkIdType tupIdx = 0; tupIdx < num_verts; ++tupIdx)
-      constrained->SetTypedComponent(tupIdx, 0, '\000');
-
-    for (vtkIdType tupIdx = num_verts; tupIdx < nvl; ++tupIdx)
-      constrained->SetTypedComponent(tupIdx, 0, '\001');
-
-    for (vtkIdType tupIdx = nvl; tupIdx < nvlp; ++tupIdx)
-      constrained->SetTypedComponent(tupIdx, 0, '\000');
-
-    for (vtkIdType tupIdx = nvlp; tupIdx < nvlps; ++tupIdx)
-      constrained->SetTypedComponent(tupIdx, 0, '\000');
-
-    out_cd->SetScalars(constrained);
-  }
   vtkDebugMacro("Finalized output cell attributes.");
   vtkDebugMacro("Verts: " << num_verts << " Lines: " << num_out_lines << " Polys: " << num_out_polys
                           << " Strips: " << num_strips << "Cells: " << num_out_cells);
@@ -1486,8 +1380,6 @@ void tscTriSurfaceCutter::PrintSelf(ostream& os, vtkIndent indent)
 
   os << indent << "AccelerateCellLocator: " << (this->AccelerateCellLocator ? "True" : "False")
      << "\n";
-  os << indent << "ColorAcquiredPts: " << (this->ColorAcquiredPts ? "True" : "False") << "\n";
-  os << indent << "ColorLoopEdges  : " << (this->ColorLoopEdges ? "True" : "False") << "\n";
   os << indent << "InsideOut: " << (this->InsideOut ? "True" : "False") << "\n";
   os << indent << "Tolerance: " << this->Tolerance << "\n";
   os << indent << "Tolerance2: " << this->Tolerance * this->Tolerance << "\n";

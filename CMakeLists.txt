@@ -16,11 +16,11 @@ endif ()
 include(CTest)
 include(GNUInstallDirs)
 
-option(TSC_BUILD_PARAVIEW_PLUGIN "Build a plugin to use SCut in ParaView." OFF)
+option(TSC_BUILD_PARAVIEW_PLUGIN "Build a plugin to use SCut in ParaView." ON)
 option(TSC_BUILD_SHARED_LIBS     "Generate shared libraries instead of static ones" ON)
-option(TSC_BUILD_TEST            "Build test" OFF)
-option(TSC_BUILD_BENCH           "Build benchmark app" OFF)
-option(TSC_WRAP_PYTHON           "Generate and build python wrapper" OFF)
+option(TSC_BUILD_TEST            "Build test" ON)
+option(TSC_BUILD_BENCH           "Build benchmark app" ON)
+option(TSC_WRAP_PYTHON           "Generate and build python wrapper" ON)
 option(TSC_VERSIONED_INSTALL     "Install artifacts with versioned names." ON)
 set(TSC_CUSTOM_LIBRARY_SUFFIX    "<DEFAULT>"
   CACHE STRING "Custom library file name suffix (defaults to the version number)"
