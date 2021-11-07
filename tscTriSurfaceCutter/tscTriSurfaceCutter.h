@@ -57,15 +57,11 @@ SOFTWARE.
 
 #include <tscTriSurfaceCutterModule.h>
 
-#include <array>
-#include <vector>
-
 #include "vtkAbstractCellLocator.h"
 #include "vtkGenericCell.h"
 #include "vtkIncrementalPointLocator.h"
 #include "vtkPolyDataAlgorithm.h"
 #include "vtkSmartPointer.h"
-#include "vtkTriangle.h"
 
 class vtkPolyData;
 
@@ -193,77 +189,3 @@ private:
   tscTriSurfaceCutter(const tscTriSurfaceCutter&) = delete;
   void operator=(const tscTriSurfaceCutter&) = delete;
 };
-
-namespace tsc_detail
-{
-  // Convention: in a triangle - v: vertex, e: edge
-  // with vertices v0--v1--v2,
-  // e0 = v0--v1, e1 = v1--v2, e2 = v2--v0;
-  const std::array<std::pair<vtkIdType, vtkIdType>, 3> TRIEDGES = { std::make_pair(0, 1),
-    std::make_pair(1, 2), std::make_pair(2, 0) };
-  const vtkIdType TRIOPPEDGE[3] = { 1, 2, 0 };  // edge id opposite to a vertex
-  const vtkIdType TRIOPPVERTS[3] = { 2, 0, 1 }; // vertex id opposite to an edge
-
-  enum class PointInTriangle
-  {
-    OnVertex,
-    OnEdge,
-    Inside,
-    Outside,
-    Degenerate
-  };
-
-  enum class PointOnLine
-  {
-    OnVertex,
-    Inside,
-    Outside,
-  };
-
-  enum class IntersectType
-  {
-    NoIntersection = 0,
-    Intersect,
-    Junction
-  };
-  // A child is born when a parent triangle/line crosses a loop's edge.
-  struct Child
-  {
-    /**
-     * @brief When a triangle(line) is cut by a loop polygon, it
-     *        births children triangles(lines)
-     */
-    Child();
-    Child(const double& cx_, const double& cy_, const vtkIdType* pts, const vtkIdType npts_,
-      const double bounds[4]);
-    Child(const double& cx_, const double& cy_, vtkIdList* pts, const double bounds[4]);
-
-    double cx, cy;               // centroid
-    vtkNew<vtkIdList> point_ids; // the ids
-    vtkBoundingBox bbox;         // bbox of all points
-  };
-
-  class Parent : public vtkGenericCell
-  {
-  public:
-    static Parent* New();
-    vtkTypeMacro(Parent, vtkGenericCell);
-    void Reset();
-    void UpdateChildren(vtkCellArray* polys);
-
-    std::vector<Child> children;
-    vtkIdType cellId;
-
-  protected:
-    /**
-     * @brief When a root triangle(line) intersects a line segment, it births child
-     * triangles(lines).
-     */
-    Parent();
-    ~Parent() override;
-
-  private:
-    Parent(const Parent&) = delete;
-    void operator=(const Parent&) = delete;
-  };
-}

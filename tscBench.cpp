@@ -228,7 +228,6 @@ int main(int argc, char** argv)
     surfCutter_->SetInputConnection(0, meshTransformer->GetOutputPort());
     surfCutter_->SetInputConnection(1, loopsReader->GetOutputPort());
     surfCutter_->SetInsideOut(insideOut);
-    surfCutter_->Print(std::cout);
     surfCutter = vtkAlgorithm::SafeDownCast(surfCutter_);
   }
   else if (useCookieCutter)
