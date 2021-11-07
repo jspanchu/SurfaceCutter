@@ -1,3 +1,27 @@
+/**
+MIT License
+
+Copyright (c) 2021 Jaswant Sai Panchumarti
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+*/
+
 #include <tscTriSurfaceCutter.h>
 #include <vtkActor.h>
 #include <vtkCallbackCommand.h>
@@ -56,10 +80,10 @@ static void ShowUsage(const char* appname)
 static void ShowControls()
 {
   std::cout << "Controls:\n"
-            << "W:    Z+ | S:     Z-\n"
             << "Up:   Y+ | Down:  Y-\n"
             << "Left: X+ | Right: X-\n"
             << "Z:   CCW | C:     CW (Looking down Z-)\n"
+            << "K:ScaleUp| H:ScaleDown\n"
             << std::endl;
 }
 
@@ -146,8 +170,8 @@ int Parse(char** argv, std::string& meshFile, std::string& loopsFile, bool& insi
 int main(int argc, char** argv)
 {
   bool useCookieCutter(false), movable(true), useClipDataSet(false), insideOut(true);
-  std::string meshFile = "Data/Triangle.vtp";
-  std::string loopsFile = "Data/Case5.vtp";
+  std::string meshFile = "Testing/Data/Triangle.vtp";
+  std::string loopsFile = "Testing/Data/Triangle.vtp";
 
   const int invalidArgs =
     Parse(argv, meshFile, loopsFile, insideOut, useCookieCutter, useClipDataSet, movable, argc);
@@ -158,10 +182,6 @@ int main(int argc, char** argv)
   vtkNew<vtkNamedColors> colors;
 
   vtkSmartPointer<vtkXMLUnstructuredDataReader> reader;
-
-  // highlight them.
-  vtkNew<vtkThreshold> constraints;
-  vtkNew<vtkThresholdPoints> acquired;
 
   if (has_suffix(meshFile, ".vtp"))
   {
@@ -210,13 +230,6 @@ int main(int argc, char** argv)
     surfCutter_->SetInsideOut(insideOut);
     surfCutter_->Print(std::cout);
     surfCutter = vtkAlgorithm::SafeDownCast(surfCutter_);
-    constraints->SetInputConnection(surfCutter->GetOutputPort());
-    constraints->SetInputArrayToProcess(
-      0, 0, 0, vtkDataObject::FIELD_ASSOCIATION_CELLS, "Constrained");
-    constraints->ThresholdBetween(1, 1);
-    acquired->SetInputConnection(surfCutter->GetOutputPort());
-    acquired->SetInputArrayToProcess(0, 0, 0, vtkDataObject::FIELD_ASSOCIATION_POINTS, "Acquired");
-    acquired->ThresholdBetween(1, 1);
   }
   else if (useCookieCutter)
   {
@@ -245,14 +258,6 @@ int main(int argc, char** argv)
   cutMeshMapper->SetInputConnection(surfCutter->GetOutputPort());
   cutMeshMapper->ScalarVisibilityOff();
 
-  vtkNew<vtkDataSetMapper> constraintsMapper;
-  constraintsMapper->SetInputConnection(constraints->GetOutputPort());
-  constraintsMapper->ScalarVisibilityOff();
-
-  vtkNew<vtkDataSetMapper> acquiredMapper;
-  acquiredMapper->SetInputConnection(acquired->GetOutputPort());
-  acquiredMapper->ScalarVisibilityOff();
-
   vtkNew<vtkDataSetMapper> polysMapper;
   polysMapper->SetInputConnection(loopsReader->GetOutputPort());
 
@@ -269,19 +274,6 @@ int main(int argc, char** argv)
   cutMeshActor->GetProperty()->SetEdgeColor(colors->GetColor3d("indigo").GetData());
   cutMeshActor->GetProperty()->SetColor(colors->GetColor3d("white").GetData());
 
-  vtkNew<vtkActor> constraintsActor;
-  constraintsActor->SetMapper(constraintsMapper);
-  constraintsActor->GetProperty()->SetRepresentationToSurface();
-  constraintsActor->GetProperty()->SetLineWidth(4);
-  constraintsActor->GetProperty()->SetColor(colors->GetColor3d("cadmium_red_deep").GetData());
-
-  vtkNew<vtkActor> acquiredActor;
-  acquiredActor->SetMapper(acquiredMapper);
-  acquiredActor->GetProperty()->SetRepresentationToPoints();
-  acquiredActor->GetProperty()->SetPointSize(16);
-  acquiredActor->GetProperty()->RenderPointsAsSpheresOn();
-  acquiredActor->GetProperty()->SetColor(colors->GetColor3d("orange").GetData());
-
   vtkNew<vtkActor> polysActor;
   polysActor->SetMapper(polysMapper);
   polysActor->GetProperty()->SetRepresentationToWireframe();
@@ -292,8 +284,6 @@ int main(int argc, char** argv)
   renderer->AddActor(cutMeshActor);
   renderer->AddActor(meshActor);
   renderer->AddActor(polysActor);
-  renderer->AddActor(constraintsActor);
-  renderer->AddActor(acquiredActor);
   renderer->SetBackground(colors->GetColor3d("slate_grey").GetData());
 
   vtkNew<vtkRenderWindow> renderWindow;
@@ -328,7 +318,16 @@ int main(int argc, char** argv)
 
   vtkNew<vtkXMLPolyDataWriter> writer;
   writer->SetFileName("CutMesh.vtp");
-  writer->SetInputConnection(surfCutter->GetOutputPort(0));
+  if (useClipDataSet)
+  {
+    vtkNew<vtkDataSetSurfaceFilter> getSurf;
+    getSurf->SetInputConnection(surfCutter->GetOutputPort());
+    writer->SetInputConnection(surfCutter->GetOutputPort(0));
+  }
+  else
+  {
+    writer->SetInputConnection(surfCutter->GetOutputPort(0));
+  }
   writer->Write();
 
   vtkNew<vtkInteractorStyleImage> istyle;

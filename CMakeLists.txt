@@ -32,6 +32,11 @@ mark_as_advanced(TSC_CUSTOM_LIBRARY_SUFFIX)
 set(BUILD_SHARED_LIBS ${TSC_BUILD_SHARED_LIBS})
 set(tsc_version_suffix "")
 
+# Set up our directory structure for output libraries and binaries
+set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${PROJECT_BINARY_DIR}/${CMAKE_INSTALL_BINDIR}")
+set(CMAKE_LIBRARY_OUTPUT_DIRECTORY "${PROJECT_BINARY_DIR}/${CMAKE_INSTALL_LIBDIR}")
+set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY "${PROJECT_BINARY_DIR}/${CMAKE_INSTALL_LIBDIR}")
+
 if (TSC_BUILD_SHARED_LIBS)
   set(CMAKE_WINDOWS_EXPORT_ALL_SYMBOLS ON)
 endif()
@@ -53,11 +58,12 @@ if (TSC_VERSIONED_INSTALL)
 endif ()
 
 ## Find ParaView, otherwise VTK
-find_package(ParaView QUIET)
+find_package(ParaView 5.10.0 QUIET)
 if(NOT ParaView_FOUND)
-  find_package(VTK)
+  find_package(VTK 9.1.0 REQUIRED)
 endif()
 message (STATUS "VTK_VERSION: ${VTK_VERSION}")
+message (STATUS "ParaView_VERSION: ${ParaView_VERSION}")
 
 # Install rpath for C++ and python wrapper.
 if(NOT DEFINED CMAKE_MACOSX_RPATH)
@@ -152,6 +158,7 @@ if (TSC_WRAP_PYTHON)
 endif()
 
 if(TSC_BUILD_PARAVIEW_PLUGIN)
+  find_package(ParaView 5.10.0 REQUIRED)
   if (NOT ParaView_FOUND)
     message(FATAL_ERROR "Cannot build plugin. ParaView installation does not exist.")
     return()
@@ -197,7 +204,6 @@ endif()
 if(TSC_BUILD_BENCH)
   add_executable(tscBench tscBench.cpp)
   target_link_libraries(tscBench PUBLIC ${VTK_LIBRARIES} tscTriSurfaceCutter)
-  set_property(TARGET tscBench PROPERTY RUNTIME_OUTPUT_DIRECTORY ${PROJECT_BINARY_DIR}/bin)
   VTK_MODULE_AUTOINIT(TARGETS tscBench MODULES ${VTK_LIBRARIES} tscTriSurfaceCutter)
 endif()
 
@@ -211,7 +217,6 @@ if(TSC_BUILD_TEST)
 
   add_executable(TesttscTriSurfaceCutter ${TEST_SRC_DIR}/TesttscTriSurfaceCutter.cxx)
   target_link_libraries(TesttscTriSurfaceCutter PUBLIC ${VTK_LIBRARIES} tscTriSurfaceCutter)
-  set_property(TARGET TesttscTriSurfaceCutter PROPERTY RUNTIME_OUTPUT_DIRECTORY ${TEST_RUNTIME_DIR})
   add_test(NAME TesttscTriSurfaceCutter COMMAND TesttscTriSurfaceCutter WORKING_DIRECTORY ${TEST_RUNTIME_DIR})
   
   foreach (i RANGE 5) # hard-coded

@@ -1,3 +1,27 @@
+/**
+MIT License
+
+Copyright (c) 2021 Jaswant Sai Panchumarti
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+*/
+
 #include "tscTriSurfaceCutter.h"
 
 #include <algorithm>
@@ -22,6 +46,7 @@
 #include <vtkInformationVector.h>
 #include <vtkLine.h>
 #include <vtkMath.h>
+#include <vtkMathUtilities.h>
 #include <vtkMergePoints.h>
 #include <vtkObjectFactory.h>
 #include <vtkPointData.h>
@@ -40,11 +65,6 @@ using LoopsInfoType = std::vector<LoopInfoType>;
 vtkStandardNewMacro(tscTriSurfaceCutter);
 
 tscTriSurfaceCutter::tscTriSurfaceCutter()
-  : AccelerateCellLocator(true)
-  , Embed(true)
-  , InsideOut(true) // default: remove portions outside loop polygons.
-  , Remove(true)
-  , Tolerance(1.0e-6)
 {
   this->SetNumberOfInputPorts(2);
   this->SetNumberOfOutputPorts(1);
@@ -242,13 +262,8 @@ namespace tsc_detail
     double u(0.0), v(0.0);
     int vtk_intersect = 0;
 
-    // Note: this section is based on consts def'd in vtkLine.cxx.
-    // Keep in mind to update this when that changes.
-    // Just so we're clear:
-    // 0: vtkLine::NoIntersect
-    // 2: vtkLine::Intersect
-    // 3: vtkLine::OnLine (Consider this as tsc_detail::IntersectType::NoIntersection)
-    if ((vtk_intersect = vtkLine::Intersection(p1, p2, q1, q2, u, v)) == 2)
+    if ((vtk_intersect = vtkLine::Intersection(p1, p2, q1, q2, u, v, tol, vtkLine::Absolute)) ==
+      vtkLine::Intersect)
     {
       // This test checks for vertex and edge intersections
       // For example
@@ -257,7 +272,12 @@ namespace tsc_detail
       //  Edge intersection
       //    (u=0 v!=0 v!=1), (u=1 v!=0 v!=1)
       //    (u!=0 u!=1 v=0), (u!=0 u!=1 v=1)
-      if ((tol < u) && (u < 1.0 - tol) && (tol < v) && (v < 1.0 - tol))
+      if ((vtkMathUtilities::NearlyEqual(u, 0.0) || vtkMathUtilities::NearlyEqual(u, 1.0)) &&
+        (vtkMathUtilities::NearlyEqual(v, 0.0) || vtkMathUtilities::NearlyEqual(v, 1.0)))
+      {
+        return tsc_detail::IntersectType::Junction;
+      }
+      else
       {
         for (unsigned short dim = 0; dim < 2; ++dim)
         {
@@ -265,12 +285,8 @@ namespace tsc_detail
         }
         return tsc_detail::IntersectType::Intersect;
       }
-      else
-      {
-        return tsc_detail::IntersectType::NoIntersection;
-      }
     }
-    else if (vtk_intersect == 3)
+    else if (vtk_intersect == vtkLine::OnLine)
     {
       double p21[3], c[3], c2[3];
       vtkMath::Subtract(p2, p1, p21);
@@ -574,11 +590,8 @@ namespace tsc_detail
   struct PopTrisImpl
   {
     vtkNew<vtkIdList> popped_cell_pts;
-    PopTrisImpl()
-    {
-      this->popped_cell_pts->Allocate(3);
-    }
-    
+    PopTrisImpl() { this->popped_cell_pts->Allocate(3); }
+
     /**
      * @brief Populate output structures and arrays with children.
      *
@@ -775,20 +788,27 @@ namespace tsc_detail
         const vtkIdType* point_ids = nullptr;
         vtkIdType num_point_ids{ 0 };
         mesh->GetCellPoints(t0, num_point_ids, point_ids);
-        // find an edge vi--vj that intersects vl--vm
+        // find an opposite edge vi--vj that intersects vl--vm
         for (const auto& edge : tsc_detail::TRIEDGES)
         {
           const vtkIdType& id0 = edge.first;
           const vtkIdType& id1 = edge.second;
           const vtkIdType& vi = point_ids[id0];
           const vtkIdType& vj = point_ids[id1];
+          if ((vi == vl && vj != vm) || (vi == vm && vj != vl) || (vj == vl && vi != vm) ||
+            (vj == vm && vi != vl))
+          {
+            continue;
+          }
           double pi[3] = { points[vi][0], points[vi][1], 0.0 };
           double pj[3] = { points[vj][0], points[vj][1], 0.0 };
 
           double px[3] = {};
           const auto intersect_type = tsc_detail::robustIntersect(pi, pj, pl, pm, px, tol);
           if (intersect_type != tsc_detail::IntersectType::Intersect)
+          {
             continue;
+          }
 
           v1 = vi;
           v2 = vj;
@@ -888,12 +908,13 @@ namespace tsc_detail
     {
       vtkDataArray* points1_arr = parent->Points->GetData();
       vtkDataArray* points2_arr = in_loop_points->GetData();
-      if (!dispatchRR::Execute(points1_arr, points2_arr, this->pop_tris_worker, inside_out, loops_info_holder,
-            parent, in_pd, out_pd, out_verts, out_lines, out_polys, out_strips, in_cd, out_verts_cd,
-            out_lines_cd, out_polys_cd, out_strips_cd, locator, fallthrough, cell_type))
-        this->pop_tris_worker(points1_arr, points2_arr, inside_out, loops_info_holder, parent, in_pd, out_pd,
-          out_verts, out_lines, out_polys, out_strips, in_cd, out_verts_cd, out_lines_cd,
-          out_polys_cd, out_strips_cd, locator, fallthrough, cell_type);
+      if (!dispatchRR::Execute(points1_arr, points2_arr, this->pop_tris_worker, inside_out,
+            loops_info_holder, parent, in_pd, out_pd, out_verts, out_lines, out_polys, out_strips,
+            in_cd, out_verts_cd, out_lines_cd, out_polys_cd, out_strips_cd, locator, fallthrough,
+            cell_type))
+        this->pop_tris_worker(points1_arr, points2_arr, inside_out, loops_info_holder, parent,
+          in_pd, out_pd, out_verts, out_lines, out_polys, out_strips, in_cd, out_verts_cd,
+          out_lines_cd, out_polys_cd, out_strips_cd, locator, fallthrough, cell_type);
     }
 
     /**
