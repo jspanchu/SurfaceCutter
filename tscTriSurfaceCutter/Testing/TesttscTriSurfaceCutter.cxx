@@ -243,7 +243,7 @@ int main()
     lCell->InsertNextCell(testPolys[i].size(), testPolys[i].data());
     loop->SetPoints(lPoints);
     loop->SetPolys(lCell);
-    surfCutter->SetLoopsData(loop);
+    surfCutter->SetCuttersData(loop);
     surfCutter->Update();
 
     vtkSmartPointer<vtkPolyData> cut = surfCutter->GetOutput();
@@ -285,7 +285,7 @@ int main()
     lCell->InsertNextCell(testPolys[i].size(), testPolys[i].data());
     loop->SetPoints(lPoints);
     loop->SetPolys(lCell);
-    surfCutter->SetLoopsData(loop);
+    surfCutter->SetCuttersData(loop);
     surfCutter->Update();
 
     vtkSmartPointer<vtkPolyData> cut = surfCutter->GetOutput();

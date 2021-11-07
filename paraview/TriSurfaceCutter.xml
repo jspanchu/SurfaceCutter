@@ -8,23 +8,22 @@
             unlike **vtkClipDataSet** and **vtkClipPolyData** (both of which are scalar-based).
             
             It crops an input vtkPolyData consisting of triangles
-            with loops specified by a second input containing polygons.
+            with cutters specified by a second input containing polygons.
             
-            The loop polygons can be concave, can have vertices exactly 
+            The cutter polygons can be concave, can have vertices exactly 
             coincident with a mesh point/edge.
 
-            It computes an **embedding** of the loop polygons' edges upon the mesh 
+            It computes an **embedding** of the cutter polygons' edges upon the mesh 
             followed by **removal** of triangles **in(out)side** the polygons. See SetInsideOut().
 
             It is possible to output a pure embedding or a pure removal.
             
             Linear cells other than triangles will be passed through.
             
-            Line segments and polylines from input will be marked as constraints.
-            
             Note:
                 Input point-data is interpolated to output.
                 Input cell-data is copied to output.
+				The cutter is projected onto the surface prior to any removal of cells.
         </Documentation>
         <InputProperty
             name="InputMesh"
@@ -47,7 +46,7 @@
         </InputProperty>
 
         <InputProperty
-            name="LoopPolygons"
+            name="CutterPolygons"
             port_index="1"
             command="SetInputConnection">
             <ProxyGroupDomain name="groups">
@@ -58,38 +57,20 @@
             <DataType value="vtkPolyData"/>
             </DataTypeDomain>
             <Documentation>
-                Set the polydata that contains loop polygons.
+                Set the polydata that contains cutter polygons.
 
-                Warning:
-                z-coordinates of the points are assumed to lie at z=constant.
-                In other words, this filter assumes that the data lies in a plane
-                orthogonal to the z axis.
             </Documentation>
         </InputProperty>
 
         <IntVectorProperty
-            name="AccelerateCellLocator"
-            command="SetAccelerateCellLocator"
-            label="Accelerate Cell Queries"
-            number_of_elements="1"
-            panel_visibility="advanced"
-            default_values="1">
-            <BooleanDomain name="bool"/>
-            <Documentation>
-                Check this box to accelerate cell queries with a 
-                multi-threaded cell locator. Default is On.
-            </Documentation>
-        </IntVectorProperty>
-
-        <IntVectorProperty
-            name="Embed"
-            command="SetEmbed"
-            label="Embed"
+            name="Imprint"
+            command="SetImprint"
+            label="Imprint"
             number_of_elements="1"
             default_values="1">
             <BooleanDomain name="bool"/>
             <Documentation>
-                Check this box to **embed** loop polygons onto the mesh. Default is On.
+                Check this box to **imprint** cutter polygons onto the mesh. Default is On.
                 Note: 
                     If **Remove** is disabled, the very functionality of this filter is disrespected.
             </Documentation>
@@ -103,7 +84,7 @@
             default_values="1">
             <BooleanDomain name="bool"/>
             <Documentation>
-                Check this box to only **remove** cells in(out)side loop polygons. Default is On.
+                Check this box to only **remove** cells in(out)side cutter polygons. Default is On.
                 Note: 
                     If **Remove** is disabled, the functionality of this filter is partially disrespected.
             </Documentation>
@@ -117,8 +98,8 @@
             default_values="1">
             <BooleanDomain name="bool"/>
             <Documentation>
-                Check this box to remove cells outside all loop polygons. Default is On.
-                If turned off, remove cells inside atleast one loop polygon.
+                Check this box to remove cells outside all cutter polygons. Default is On.
+                If turned off, remove cells inside atleast one cutter polygon.
             </Documentation>
         </IntVectorProperty>
 
@@ -134,7 +115,7 @@
         </DoubleVectorProperty>
 
         <Hints>
-            <ShowInMenu category="SCUT" />
+            <ShowInMenu category="TSC" />
         </Hints>
 
         <!-- incremental point locator begin -->

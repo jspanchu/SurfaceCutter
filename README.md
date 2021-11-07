@@ -11,8 +11,7 @@ ninja install
 
 ### Usage
 #### ParaView
-<a href="https://imgur.com/qzBJGsI"><img src="https://i.imgur.com/qzBJGsI.png" title="source: imgur.com" width="400"/></a>
-
+Filters -> SCUT -> Triangulation Cutter
 #### C++
 ```c++
 #include <tscTriSurfaceCutter.h>
@@ -45,19 +44,19 @@ cutter.SetLoopsConnection(1, loops.GetOutputPort())
 <a href="https://imgur.com/kP0lQTa"><img src="https://i.imgur.com/kP0lQTa.png" title="source: imgur.com" width="400"/></a>
 <a href="https://imgur.com/uXsGpo2"><img src="https://i.imgur.com/uXsGpo2.gif" title="source: imgur.com" width="400"/></a>
 
-## **Embed**: *On* | **Remove**: *Off* | **Invert**: NA
+## **Imprint**: *On* | **Remove**: *Off* | **Invert**: NA
 <a href="https://imgur.com/6sFCEFX"><img src="https://i.imgur.com/6sFCEFX.png" title="source: imgur.com" width="400"/></a>
 
-## **Embed**: *On* | **Remove**: *On* | **Invert**: *On*
+## **Imprint**: *On* | **Remove**: *On* | **Invert**: *On*
 <a href="https://imgur.com/L5MPDBc"><img src="https://i.imgur.com/L5MPDBc.jpg" title="source: imgur.com" width="400"/></a>
 
-## **Embed**: *On* | **Remove**: *On* | **Invert**: *Off*
+## **Imprint**: *On* | **Remove**: *On* | **Invert**: *Off*
 <a href="https://imgur.com/6NJYc3W"><img src="https://i.imgur.com/6NJYc3W.jpg" title="source: imgur.com" width="400"/></a>
 
-## **Embed**: *Off* | Remove: *On* | **Invert**: *On*
+## **Imprint**: *Off* | Remove: *On* | **Invert**: *On*
 <a href="https://imgur.com/llD8D7y"><img src="https://i.imgur.com/llD8D7y.jpg" title="source: imgur.com" width="400"/></a>
 
-## **Embed**: *Off* | Remove: *On* | **Invert**: *Off*
+## **Imprint**: *Off* | Remove: *On* | **Invert**: *Off*
 <a href="https://imgur.com/TjEd6Rz"><img src="https://i.imgur.com/TjEd6Rz.jpg" title="source: imgur.com" width="400"/></a>
 
 ## Real-time
@@ -87,4 +86,5 @@ W:    Z+ | S:     Z-
 Up:   Y+ | Down:  Y-
 Left: X+ | Right: X-
 Z:   CCW | C:     CW (Looking down Z-)
+K:ScaleUp| H:ScaleDown
 ```
