@@ -36,12 +36,13 @@ set(tsc_version_suffix "")
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${PROJECT_BINARY_DIR}/${CMAKE_INSTALL_BINDIR}")
 set(CMAKE_LIBRARY_OUTPUT_DIRECTORY "${PROJECT_BINARY_DIR}/${CMAKE_INSTALL_LIBDIR}")
 set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY "${PROJECT_BINARY_DIR}/${CMAKE_INSTALL_LIBDIR}")
+
 # Install rpath
 if(NOT DEFINED CMAKE_MACOSX_RPATH)
   set(CMAKE_MACOSX_RPATH TRUE)
 endif()
 if(NOT DEFINED CMAKE_BUILD_WITH_INSTALL_RPATH)
-  set(CMAKE_BUILD_WITH_INSTALL_RPATH TRUE)
+  set(CMAKE_BUILD_WITH_INSTALL_RPATH FALSE)
 endif()
 if(NOT DEFINED CMAKE_INSTALL_RPATH)
   set(CMAKE_INSTALL_RPATH "${CMAKE_INSTALL_PREFIX}/${CMAKE_INSTALL_LIBDIR}")
@@ -221,7 +222,11 @@ endif()
 
 if(TSC_BUILD_BENCH)
   add_executable(tscBench tscBench.cpp)
-  target_link_libraries(tscBench PUBLIC ${VTK_LIBRARIES} tscTriSurfaceCutter)
+  target_link_libraries(tscBench PRIVATE ${VTK_LIBRARIES} tscTriSurfaceCutter)
+  install(
+    TARGETS     tscBench
+    DESTINATION "${CMAKE_INSTALL_BINDIR}"
+  )
   VTK_MODULE_AUTOINIT(TARGETS tscBench MODULES ${VTK_LIBRARIES} tscTriSurfaceCutter)
 endif()
 
@@ -234,7 +239,7 @@ if(TSC_BUILD_TEST)
   set(TEST_RUNTIME_DIR ${PROJECT_BINARY_DIR}/Testing)
 
   add_executable(TesttscTriSurfaceCutter ${TEST_SRC_DIR}/TesttscTriSurfaceCutter.cxx)
-  target_link_libraries(TesttscTriSurfaceCutter PUBLIC ${VTK_LIBRARIES} tscTriSurfaceCutter)
+  target_link_libraries(TesttscTriSurfaceCutter PRIVATE ${VTK_LIBRARIES} tscTriSurfaceCutter)
   add_test(NAME TesttscTriSurfaceCutter COMMAND TesttscTriSurfaceCutter WORKING_DIRECTORY ${TEST_RUNTIME_DIR})
   
   foreach (i RANGE 5) # hard-coded
