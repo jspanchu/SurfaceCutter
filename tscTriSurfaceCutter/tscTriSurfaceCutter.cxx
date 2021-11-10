@@ -65,9 +65,7 @@ using dispatchR = vtkArrayDispatch::DispatchByValueType<vtkArrayDispatch::Reals>
 using SegmentType = std::pair<vtkIdType, vtkIdType>;
 using SegmentsType = std::vector<SegmentType>;
 using CutterInfoType = std::pair<vtkBoundingBox, vtkNew<vtkIdList>>;
-using CutteeInfoType = std::pair<vtkBoundingBox, vtkNew<vtkIdList>>;
 using CuttersInfoType = std::vector<CutterInfoType>;
-using CutteesInfoType = std::vector<CutteeInfoType>;
 
 vtkStandardNewMacro(tscTriSurfaceCutter);
 
@@ -1306,7 +1304,7 @@ int tscTriSurfaceCutter::RequestData(vtkInformation* vtkNotUsed(request),
 
   ///> Find candidate cutter-mesh crossings
   CuttersInfoType cutters_info_holder(num_cutter_polys);
-  CutteesInfoType cells_info_holder(num_cells);
+  std::vector<vtkBoundingBox> cell_cache;
   double cutters_bds[6] = {}, in_bds[6] = {};
   std::unordered_map<vtkIdType, SegmentsType> possible_crossings;
   auto pt_ids = vtkSmartPointer<vtkIdList>::New();
@@ -1320,21 +1318,9 @@ int tscTriSurfaceCutter::RequestData(vtkInformation* vtkNotUsed(request),
   for (iter->InitTraversal(); !iter->IsDoneWithTraversal(); iter->GoToNextCell())
   {
     const vtkIdType& cell_id = iter->GetCellId();
-    const int& cell_type = input->GetCellType(cell_id);
-    if (cell_type != VTK_TRIANGLE)
-    {
-      continue;
-    }
-    vtkBoundingBox cell_bbox;
-    pt_ids = iter->GetPointIds();
-    for (auto pt = pt_ids->begin(); pt != pt_ids->end(); ++pt)
-    {
-      double p[3] = {};
-      in_points->GetPoint(*pt, p);
-      cell_bbox.AddPoint(p);
-    }
-    cells_info_holder[cell_id].first = cell_bbox;
-    cells_info_holder[cell_id].second->DeepCopy(iter->GetPointIds());
+    double bds[6] = {};
+    input->GetCellBounds(cell_id, bds);
+    cell_cache.emplace_back(bds);
   }
 
   for (cutters_iter->InitTraversal(); !cutters_iter->IsDoneWithTraversal();
@@ -1386,7 +1372,7 @@ int tscTriSurfaceCutter::RequestData(vtkInformation* vtkNotUsed(request),
           continue;
         }
 
-        if (cells_info_holder[cell_id].first.Intersects(edge_bbox))
+        if (cell_cache[cell_id].Intersects(edge_bbox))
         {
           possible_crossings[cell_id].emplace_back(e0, e1);
         }
