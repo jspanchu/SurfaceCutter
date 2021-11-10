@@ -416,7 +416,7 @@ namespace
 
     if (vtk_intersect == vtkLine::Intersect)
     {
-      if ((vtkMathUtilities::NearlyEqual(u, 0.0) || vtkMathUtilities::NearlyEqual(u, 1.0)) &&
+      if ((vtkMathUtilities::NearlyEqual(u, 0.0) || vtkMathUtilities::NearlyEqual(u, 1.0)) ||
         (vtkMathUtilities::NearlyEqual(v, 0.0) || vtkMathUtilities::NearlyEqual(v, 1.0)))
       {
         return IntersectType::Junction;
