@@ -716,18 +716,17 @@ namespace
    * @param test_x        test x-coordinate
    * @return
    */
-  template <typename ArrT>
-  bool isInside(vtkIdList* cutter_pt_ids, vtk::detail::ConstTupleIterator<ArrT, 3> points,
-    const double& test_x, const double& test_y)
+  bool isInside(double pt[3], int npts, double* pts)
   {
+    const double& test_x = pt[0];
+    const double& test_y = pt[1];
     bool inside{ false };
-    const vtkIdType num_cutter_pts(cutter_pt_ids->GetNumberOfIds());
-    for (vtkIdType i = 0, j = num_cutter_pts - 1; i < num_cutter_pts; j = i++)
+    for (int i = 0, j = npts - 1; i < npts; j = i++)
     {
-      const double& ix = points[cutter_pt_ids->GetId(i)][0];
-      const double& iy = points[cutter_pt_ids->GetId(i)][1];
-      const double& jx = points[cutter_pt_ids->GetId(j)][0];
-      const double& jy = points[cutter_pt_ids->GetId(j)][1];
+      const double& ix = pts[i * 3];
+      const double& iy = pts[i * 3 + 1];
+      const double& jx = pts[j * 3];
+      const double& jy = pts[j * 3 + 1];
 
       if (((iy > test_y) != (jy > test_y)) && (test_x < (jx - ix) * (test_y - iy) / (jy - iy) + ix))
         inside = !inside;
@@ -795,7 +794,11 @@ namespace
             if (inside_out)
             {
               // the hard-way; default
+#ifdef USE_VTK_POINT_IN_POLYGON
               bool is_inside = (vtkPolygon::PointInPolygon(x, npts, pts, bds, n) == 1);
+#else           
+              bool is_inside = isInside(x, npts, pts);
+#endif
               rejected &= !is_inside;
             }
             else
@@ -808,7 +811,11 @@ namespace
               else
               {
                 // the hard-way;
+#ifdef USE_VTK_POINT_IN_POLYGON
                 bool is_inside = (vtkPolygon::PointInPolygon(x, npts, pts, bds, n) == 1);
+#else
+                bool is_inside = isInside(x, npts, pts);
+#endif
                 rejected |= is_inside;
               }
             }
@@ -1361,10 +1368,12 @@ int tscTriSurfaceCutter::RequestData(vtkInformation* vtkNotUsed(request),
     }
     vtkPolygon::ComputeNormal(points, cutters_cache[cutter_id].normal);
 
-    for (auto e = pt_ids->begin(); e != pt_ids->end(); ++e)
+    for (vtkIdType i = 0; i < npts; ++i)
     {
-      const vtkIdType& e0 = *e;
-      const vtkIdType& e1 = (e0 + 1) % npts;
+      const vtkIdType& this_i = i;
+      const vtkIdType next_i = (i + 1) % npts;
+      const vtkIdType& e0 = pt_ids->GetId(this_i);
+      const vtkIdType& e1 = pt_ids->GetId(next_i);
       double p0[3], p1[3] = {};
 
       in_cutter_points->GetPoint(e0, p0);
