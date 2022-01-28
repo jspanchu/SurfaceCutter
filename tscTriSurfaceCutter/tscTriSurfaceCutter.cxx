@@ -130,6 +130,7 @@ namespace
   {
     vtkBoundingBox bbox;
     vtkNew<vtkDoubleArray> points;
+    int cell_type = VTK_POLYGON;
     double normal[3] = {};
   };
   using CuttersInfoType = std::vector<CutterInfo>;
@@ -787,7 +788,6 @@ namespace
           {
             double* pts = cache.points->GetPointer(0);
             double bds[6] = {};
-            double n[3] = { cache.normal[0], cache.normal[1], cache.normal[2] };
             int npts = cache.points->GetNumberOfTuples();
             cache.bbox.GetBounds(bds);
 
@@ -795,7 +795,8 @@ namespace
             {
               // the hard-way; default
 #ifdef USE_VTK_POINT_IN_POLYGON
-              bool is_inside = (vtkPolygon::PointInPolygon(x, npts, pts, bds, n) == 1);
+              double normal[3] = { cache.normal[0], cache.normal[1], cache.normal[2] };
+              bool is_inside = (vtkPolygon::PointInPolygon(x, npts, pts, bds, normal) == 1);
 #else           
               bool is_inside = isInside(x, npts, pts);
 #endif
@@ -812,7 +813,8 @@ namespace
               {
                 // the hard-way;
 #ifdef USE_VTK_POINT_IN_POLYGON
-                bool is_inside = (vtkPolygon::PointInPolygon(x, npts, pts, bds, n) == 1);
+                double normal[3] = { cache.normal[0], cache.normal[1], cache.normal[2] };
+                bool is_inside = (vtkPolygon::PointInPolygon(x, npts, pts, bds, normal) == 1);
 #else
                 bool is_inside = isInside(x, npts, pts);
 #endif
@@ -1254,7 +1256,6 @@ int tscTriSurfaceCutter::RequestData(vtkInformation* vtkNotUsed(request),
   ///> Allocate output data structures.
   vtkSmartPointer<vtkPoints> in_points = input->GetPoints();
   vtkSmartPointer<vtkPoints> in_cutter_points = cutters->GetPoints();
-  vtkSmartPointer<vtkCellArray> in_cutter_polys = cutters->GetPolys();
 
   vtkNew<vtkPoints> out_pts;
   vtkNew<vtkCellArray> out_verts, out_lines, out_polys, out_strips;
@@ -1270,13 +1271,15 @@ int tscTriSurfaceCutter::RequestData(vtkInformation* vtkNotUsed(request),
   const vtkIdType& num_strips = input->GetNumberOfStrips();
   const vtkIdType& num_polys = input->GetNumberOfPolys();
   const vtkIdType& num_cutter_polys = cutters->GetNumberOfPolys();
+  const vtkIdType& num_cutter_lines = cutters->GetNumberOfLines();
+  const vtkIdType& num_cutter_cells = cutters->GetNumberOfCells();
 
   if (!(num_points && num_polys))
   {
     vtkWarningMacro(<< "Input mesh is empty.");
     return 1;
   }
-  if (!(num_cutters_points && num_cutter_polys))
+  if (!(num_cutters_points && (num_cutter_polys || num_cutter_lines)))
   {
     vtkWarningMacro(<< "Input cutters are empty.");
     return 1;
@@ -1319,7 +1322,7 @@ int tscTriSurfaceCutter::RequestData(vtkInformation* vtkNotUsed(request),
   ///> Finished allocation
 
   ///> Find candidate cutter-mesh crossings
-  CuttersInfoType cutters_cache(num_cutter_polys);
+  CuttersInfoType cutters_cache(num_cutter_cells);
   std::vector<vtkBoundingBox> cells_cache;
   double cutters_bds[6] = {}, in_bds[6] = {};
   std::unordered_map<vtkIdType, SegmentsType> possible_crossings;
@@ -1344,10 +1347,16 @@ int tscTriSurfaceCutter::RequestData(vtkInformation* vtkNotUsed(request),
        cutters_iter->GoToNextCell())
   {
     const int& cutter_type = cutters_iter->GetCellType();
-    if (cutter_type == VTK_LINE || cutter_type == VTK_POLY_LINE || cutter_type == VTK_VERTEX ||
-      cutter_type == VTK_POLY_VERTEX || cutter_type == VTK_TRIANGLE_STRIP)
+    switch (cutter_type)
     {
-      continue;
+      case VTK_QUAD:
+      case VTK_TRIANGLE:
+      case VTK_POLYGON:
+      case VTK_LINE:
+      case VTK_POLY_LINE:
+        break;
+      default: // Ignore all other cell types from cutter input.
+        continue;
     }
 
     const vtkIdType& cutter_id = cutters_iter->GetCellId();
@@ -1366,6 +1375,7 @@ int tscTriSurfaceCutter::RequestData(vtkInformation* vtkNotUsed(request),
     {
       cutters_cache[cutter_id].points->CopyComponent(dim, points->GetData(), dim);
     }
+    cutters_cache[cutter_id].cell_type = cutter_type;
     vtkPolygon::ComputeNormal(points, cutters_cache[cutter_id].normal);
 
     for (vtkIdType i = 0; i < npts; ++i)
