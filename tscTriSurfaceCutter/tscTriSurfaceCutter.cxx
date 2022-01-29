@@ -1347,13 +1347,20 @@ int tscTriSurfaceCutter::RequestData(vtkInformation* vtkNotUsed(request),
        cutters_iter->GoToNextCell())
   {
     const int& cutter_type = cutters_iter->GetCellType();
+    pt_ids = cutters_iter->GetPointIds();
+    const vtkIdType& npts = pt_ids->GetNumberOfIds();
+    vtkIdType nedges = 0;
+
     switch (cutter_type)
     {
       case VTK_QUAD:
       case VTK_TRIANGLE:
       case VTK_POLYGON:
+        nedges = npts;
+        break;
       case VTK_LINE:
       case VTK_POLY_LINE:
+        nedges = npts - 1;
         break;
       default: // Ignore all other cell types from cutter input.
         continue;
@@ -1363,10 +1370,7 @@ int tscTriSurfaceCutter::RequestData(vtkInformation* vtkNotUsed(request),
     double bds[6] = {};
     cutters->GetCellBounds(cutter_id, bds);
     bds[4] = bds[5] = 0.0;
-
-    pt_ids = cutters_iter->GetPointIds();
     points = cutters_iter->GetPoints();
-    const vtkIdType& npts = pt_ids->GetNumberOfIds();
 
     cutters_cache[cutter_id].bbox = vtkBoundingBox(bds);
     cutters_cache[cutter_id].points->SetNumberOfComponents(3);
@@ -1378,12 +1382,13 @@ int tscTriSurfaceCutter::RequestData(vtkInformation* vtkNotUsed(request),
     cutters_cache[cutter_id].cell_type = cutter_type;
     vtkPolygon::ComputeNormal(points, cutters_cache[cutter_id].normal);
 
-    for (vtkIdType i = 0; i < npts; ++i)
+    for (vtkIdType e = 0; e < nedges; ++e)
     {
-      const vtkIdType& this_i = i;
-      const vtkIdType next_i = (i + 1) % npts;
-      const vtkIdType& e0 = pt_ids->GetId(this_i);
-      const vtkIdType& e1 = pt_ids->GetId(next_i);
+      const vtkIdType& i0 = e;
+      const vtkIdType i1 = (e + 1) % npts;
+
+      const vtkIdType& e0 = pt_ids->GetId(i0);
+      const vtkIdType& e1 = pt_ids->GetId(i1);
       double p0[3], p1[3] = {};
 
       in_cutter_points->GetPoint(e0, p0);
